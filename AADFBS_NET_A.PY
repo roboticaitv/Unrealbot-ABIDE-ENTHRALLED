@@ -153,12 +153,12 @@ def build_dataset(samples=200000):
     return X, Y
 
 # Training adjustment
-X, Y = build_dataset(15000)
+X, Y = build_dataset(150000)
 
 history = model.fit(
     X,
     Y,
-    epochs=100,
+    epochs=150,
     batch_size=64,
     validation_split=0.3,
     shuffle=True

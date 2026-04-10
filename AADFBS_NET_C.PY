@@ -1,6 +1,6 @@
 # NET_C -  ENEMY STATE NETWORK
 # Artificial Belief-Integrated Decision Engine: Enhanced Through Abstract Latent Long-term Reasoning (ABIDE-ENTHRALLED)   - enemy state network
-# Version: 1.1.2
+# Version: 1.2.2
 # Tensorflow version: 2.15.0
 # Activation functions used: relu, relu, linear
 
@@ -93,45 +93,110 @@ def total_loss(y_true, y_pred):
 
 # Compile the model
 model.compile(
-    optimizer="adam",
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
     loss=total_loss
 )
 
-# Target generation
+# =========================
+# INTELIGENT TARGET GENERATOR
+# =========================
 def enemy_semantic_target(b):
-    threat = max(1.0 - b[0], 1.0 - b[1])
-    pressure = max(b[2], b[3])
-    blocking = max(b[6], b[7])
+
+    d1, d2 = b[0], b[1]
+
+    v1, v2 = b[2], b[3]
+
+    align1, align2 = b[4], b[5]
+
+    block1, block2 = b[6], b[7]
+
+    g1, g2 = b[8], b[9]
+
+    pressure_raw = b[10]
+
+    # =========================
+    # THREAT ASSESSMENT
+    # =========================
+    t1 = (1 - d1) * align1
+    t2 = (1 - d2) * align2
+
+    threat = max(t1, t2)
+
+    # =========================
+    # PRESSURE
+    # =========================
+    pressure = 0.5 * pressure_raw + 0.5 * max(v1, v2)
+
+    # =========================
+    # BLOCKING
+    # =========================
+    blocking = max(block1, block2) * threat
+
+    # =========================
+    # INTERCEPTION
+    # =========================
+    interception = 1.0 if (blocking > 0.6 and threat > 0.5) else 0.0
+
+    # =========================
+    # EVASION
+    # =========================
+    evasion = 1.0 if (threat > 0.6 and pressure > 0.5) else 0.0
+
+    # =========================
+    # AGGRESSIVE IS VIABLE
+    # =========================
+    aggressive = 1.0 if (threat < 0.4 and pressure < 0.5) else 0.0
 
     return np.array([
         threat,
         pressure,
         blocking,
-        1.0 if blocking > 0.7 else 0.0, # Interception risk
-        1.0 if pressure > 0.7 else 0.0, # Evasion needed
-        1.0 if threat < 0.4 else 0.0 # Agressive viable
+        interception,
+        evasion,
+        aggressive
     ], dtype=np.float32)
 
-# Dataset generator - This is a random generator for different states
-def generate_random_belief():
-    b = np.random.rand(N_BELIEFS)
+# =========================
+# DATASET
+# =========================
+def generate_realistic_belief():
 
-    # Semantic coherence constraints
-    if b[10]  > 0.7: # high pressure
-        b[0] *= 0.5
-    
+    b = np.zeros(N_BELIEFS)
+
+    b[0] = np.random.beta(2, 5)
+    b[1] = np.random.beta(2, 5)
+
+    b[2] = np.random.rand()
+    b[3] = np.random.rand()
+
+    b[4] = np.random.rand()
+    b[5] = np.random.rand()
+
+    b[6] = b[4] * (1 - b[0])
+    b[7] = b[5] * (1 - b[1])
+
+    b[8] = np.random.rand()
+    b[9] = np.random.rand()
+
+    b[10] = np.clip((1 - b[0]) + (1 - b[1]), 0, 1)
+
+    b[11] = 1.0
+
     return b.astype(np.float32)
 
-def build_dataset(samples=20000):
+def build_dataset(samples=30000):
+
     X = []
     Y = []
+
     for _ in range(samples):
-        belief = generate_random_belief()
+
+        belief = generate_realistic_belief()
         target = enemy_semantic_target(belief)
 
         X.append(belief)
         Y.append(target)
-    
+
     X = np.array(X)
     Y = np.array(Y)
 
@@ -140,19 +205,19 @@ def build_dataset(samples=20000):
 
     return X, Y
 
-# Training adjustment
-X, Y = build_dataset(15000)
+X, Y = build_dataset(30000)
 
 history = model.fit(
     X,
     Y,
-    epochs=100,
+    epochs=45,
     batch_size=128,
     validation_split=0.1,
     shuffle=True
 )
 
-# Plot code block
+model.save("NET_C_ENEMY_ENCODER.h5")
+
 plt.figure()
 plt.plot(history.history["loss"], label="Train Loss")
 plt.plot(history.history["val_loss"], label="Validation Loss")
@@ -172,7 +237,7 @@ test_beliefs = np.array([
 
 semantic_outputs = model.predict(test_beliefs)
 
-print("\n===== ENEMY SEMANTIC TEST =====")
+print("\nENEMY SEMANTIC TEST ")
 for i, o in enumerate(semantic_outputs):
     print(f"\nCase {i+1}")
     print(f"Threat:              {o[0]:.2f}")
@@ -182,5 +247,3 @@ for i, o in enumerate(semantic_outputs):
     print(f"Evasion recommended: {o[4]:.2f}")
     print(f"Aggressive viable:   {o[5]:.2f}")
 
-# Saving model
-model.save("NET_C_ENEMY_ENCODER.h5")

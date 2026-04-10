@@ -1,6 +1,6 @@
 # NET_ENTHRALLED -  DETERMINISTIC DECISION NETWORK
 # Artificial Belief-Integrated Decision Engine: Enhanced Through Abstract Latent Long-term Reasoning (ABIDE-ENTHRALLED)   - decision network
-# Version: 1.0.1
+# Version: 1.0.7
 # Tensorflow version: 2.15.0
 # Activation functions used: relu, relu, tanh
 
@@ -79,155 +79,217 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models
 import matplotlib.pyplot as plt
-import os
 
-# Config values
-tf.random.set_seed(546)
-np.random.seed(123)
+# =========================
+# CONFIG
+# =========================
+tf.random.set_seed(54)
+np.random.seed(13)
 
-INPUT_DIM = 32 # From concatenated embeddings A(6) + B(8) + C(6) + temporal history consideration (12)
-OUTPUT_DIM = 8 # Action embedding dimension
-SAMPLES = 12000
-EPOCHS = 60
+INPUT_DIM = 32
+OUTPUT_DIM = 8
+
+SAMPLES = 80000
+EPOCHS = 80
 BATCH_SIZE = 256
-LR = 1e-3
+LR = 1e-4
 
-# Dataset generation (random for testing purposes)
+# =========================
+# INTELIGENT SAMPLE GENERATION
+# =========================
 def generate_sample():
-    # Random input embedding all normalized
-    net_a = np.random.rand(6)
-    net_b = np.random.rand(8)
-    net_c = np.random.rand(6)
-    net_t = np.random.rand(12)
-    
+
+    # =========================
+    # INPUTS BASE
+    # =========================
+    net_a = np.clip(np.random.normal(0.5, 0.25, 6), 0, 1)
+    net_b = np.clip(np.random.normal(0.5, 0.25, 8), 0, 1)
+    net_c = np.clip(np.random.normal(0.5, 0.3, 6), 0, 1)
+    net_t = np.clip(np.random.normal(0.5, 0.25, 12), 0, 1)
+
+    # =========================
+    # CONTEXT VARIABLES
+    # =========================
+    ball_distance = np.random.beta(2, 5)
+    alignment = np.random.uniform(0, 1)
+    enemy_distance = np.random.beta(3, 2)
+    blocking = np.random.uniform(0, 1)
+
+    # =========================
+    # VARIABLES
+    # =========================
+    ball_free = net_a[2]
+    shoot_window = net_a[3]
+
+    mobility = net_b[0]
+    stability = net_b[2]
+
+    enemy_threat = net_c[0]
+    interception = net_c[3]
+
+    pressure = net_t[0]
+    defensive_overload = net_t[2]
+    emergency = net_t[11]
+
+    # =========================
+    # PHYSICS ADJUSTMENTS
+    # =========================
+    enemy_threat *= (1 - enemy_distance)
+    shoot_window *= alignment * (1 - blocking)
+
+    # =========================
+    # GOOD CONDITIONS
+    # =========================
+    good_shot = (
+        ball_distance < 0.2 and
+        alignment > 0.8 and
+        blocking < 0.3 and
+        enemy_threat < 0.4
+    )
+
+    bad_shot = (
+        ball_distance > 0.3 or
+        alignment < 0.5 or
+        blocking > 0.5
+    )
+
+    danger = (
+        enemy_threat > 0.6 or
+        interception > 0.5 or
+        emergency > 0.7
+    )
+
+    # =========================
+    # OUTPUTS
+    # =========================
+
+    # VELOCITY
+    if danger:
+        v = -0.6
+    else:
+        v = 0.8 * (1 - ball_distance) * mobility
+
+    w = np.clip((alignment - 0.5) * 2, -1, 1)
+
+    if good_shot:
+        kick = 1.0
+    elif bad_shot:
+        kick = 0.0
+    else:
+        kick = 0.2 * shoot_window
+
+    urgency = np.clip(pressure + (1 - ball_distance), 0, 1)
+
+    aggr = np.clip((1 - enemy_threat) * alignment, 0, 1)
+
+    defense = np.clip(enemy_threat + defensive_overload, 0, 1)
+
+    pass_pref = np.clip(blocking * (1 - alignment), 0, 1)
+
+    emergency_flag = 1.0 if danger else 0.0
+
     x = np.concatenate([net_a, net_b, net_c, net_t])
 
-    # Logic of action generation (deterministic)
-    offensive_momentum = net_a[1]
-    emergency = net_t[11]
-    enemy_threat = net_c[0]
-    mobility = net_b[0]
-    shooot_window = net_a[3]
-
-    # For linear velocity
-    v = np.clip(
-        0.8 * mobility - 0.6 * enemy_threat,
-        -1.0, 1.0
-    )
-
-    # For angular velocity
-    w = np.clip(
-        net_t[5] - net_c[1],
-        -1.0, 1.0
-    )
-
-    # for kick intensity
-    kick = shooot_window * offensive_momentum
-
-    # For action urgency
-    urgency = np.clip(net_t[4] + emergency, 0., 1)
-
-    # For aggressiveness level
-    aggr = np.clip(offensive_momentum - enemy_threat, 0, 1)
-
-    # For defensive bias
-    defense = np.clip(enemy_threat + net_t[2], 0, 1)
-
-    # For pass preference
-    pass_pref = np.clip(net_a[1] * net_b[4], 0, 1)
-
-    # For emergency override (binary-like)
-    emergency_flag = 1.0 if emergency > 0.6 else 0.0
-
-    y = np.array([v,
-                  w,
-                  kick,
-                  urgency,
-                  aggr,
-                  defense,
-                  pass_pref,
-                  emergency_flag], dtype=np.float32)
+    y = np.array([
+        v, w, kick, urgency, aggr, defense, pass_pref, emergency_flag
+    ], dtype=np.float32)
 
     return x, y
 
-# Build dataset
-def build_dataset(n_samples):
-    X = []
-    Y = []
-    for _ in range(n_samples):
+
+# =========================
+# DATASET
+# =========================
+def build_dataset(n):
+    X, Y = [], []
+    for _ in range(n):
         x, y = generate_sample()
         X.append(x)
         Y.append(y)
-    
     return np.array(X), np.array(Y)
 
-# Build the model
+
+# =========================
+# LOSS PRO
+# =========================
+def custom_loss(y_true, y_pred):
+
+    mse = tf.reduce_mean(tf.square(y_true - y_pred))
+
+    wrong_kick = tf.maximum(0.0, y_pred[:,2] - y_true[:,2])
+
+    miss_kick = tf.maximum(0.0, y_true[:,2] - y_pred[:,2])
+
+    conflict = tf.maximum(0.0, y_pred[:,4] - tf.abs(y_pred[:,0]))
+
+    return (
+        mse
+        + 0.8 * tf.reduce_mean(wrong_kick)
+        + 0.6 * tf.reduce_mean(miss_kick)
+        + 0.3 * tf.reduce_mean(conflict)
+    )
+
+
+# =========================
+# MODEL
+# =========================
 def build_model():
     model = models.Sequential([
         layers.Input(shape=(INPUT_DIM,)),
+
+        layers.Dense(128, activation="relu"),
+        layers.BatchNormalization(),
+
         layers.Dense(64, activation="relu"),
+        layers.BatchNormalization(),
+
         layers.Dense(32, activation="relu"),
-        
-        # True action embedding output
-        layers.Dense(OUTPUT_DIM, activation="tanh") 
+
+        layers.Dense(OUTPUT_DIM, activation="tanh")
     ])
 
-# Compile the model
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=LR),
-        loss="mse"
+        loss=custom_loss
     )
 
     return model
 
-# Train the model
 
-print("[INFO] Generating dataset...")
+# =========================
+# TRAIN
+# =========================
+print("[INFO] Generando dataset...")
 X, Y = build_dataset(SAMPLES)
 
 split = int(0.85 * SAMPLES)
+
 X_train, X_val = X[:split], X[split:]
 Y_train, Y_val = Y[:split], Y[split:]
 
 print("[INFO] Building model...")
 model = build_model()
-model.summary()
 
-print("[INFO] Training model...")
+print("[INFO] Training...")
 history = model.fit(
     X_train, Y_train,
     validation_data=(X_val, Y_val),
     epochs=EPOCHS,
-    batch_size=BATCH_SIZE,
-    verbose=1
+    batch_size=BATCH_SIZE
 )
 
-# Plot training graph
-
+# =========================
+# GRAPH
+# =========================
 plt.figure()
-plt.plot(history.history["loss"], label="Train Loss")
-plt.plot(history.history["val_loss"], label="Validation Loss")
-plt.xlabel("Epoch")
-plt.ylabel("MSE Loss")
-plt.title("NET_ENTHRALLED Embedding Training")
+plt.plot(history.history["loss"], label="train")
+plt.plot(history.history["val_loss"], label="val")
 plt.legend()
 plt.grid()
+plt.title("ENTHRALLED TRAINING")
 plt.show()
 
-# Verify with a sample input
-
-print("\n[INFO] Testing model with a sample input...")
-test_x, test_y = generate_sample()
-pred = model.predict(test_x[np.newaxis])[0]
-
-labels = [
-    "linear velocity", "angular velocity", "kick", "Urgency", "Aggresiveness",
-    "Defensive bias", "Pass pref", "Emergency"
-]
-
-print("\n[INFO] Testing model with a sample input...")
-test_x, test_y = generate_sample()
-pred = model.predict(test_x[np.newaxis])[0]
-
-# save the model
+# =========================
+# SAVE
+# =========================
 model.save("AADFBS_ENTHRALLED.h5")
