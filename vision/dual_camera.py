@@ -32,49 +32,69 @@ class DualCamera:
         self.running = False
         
         if Picamera2 is not None:
-            self._init_cameras()
+            self._init_picamera2()
+        else:
+            self._init_opencv_fallback()
 
-    def _init_cameras(self):
+    def _init_picamera2(self):
         try:
-            # Initialize camera 0
             self.cam0 = Picamera2(camera=0)
             config0 = self.cam0.create_preview_configuration(
                 main={"size": self.resolution, "format": self.format, "framerate": self.framerate}
             )
             self.cam0.configure(config0)
             
-            # Initialize camera 1
             self.cam1 = Picamera2(camera=1)
             config1 = self.cam1.create_preview_configuration(
                 main={"size": self.resolution, "format": self.format, "framerate": self.framerate}
             )
             self.cam1.configure(config1)
-            
-            print(f"Cameras initialized at {self.resolution} @ {self.framerate} FPS")
+            print(f"Picamera2 initialized at {self.resolution} @ {self.framerate} FPS")
         except Exception as e:
-            print(f"Failed to initialize dual cameras: {e}")
+            print(f"Failed to initialize Picamera2: {e}")
+
+    def _init_opencv_fallback(self):
+        print("Using standard OpenCV VideoCapture fallback...")
+        self.cam0 = cv2.VideoCapture(0)
+        self.cam0.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+        self.cam0.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+        self.cam0.set(cv2.CAP_PROP_FPS, self.framerate)
+        
+        self.cam1 = cv2.VideoCapture(1)
+        self.cam1.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+        self.cam1.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+        self.cam1.set(cv2.CAP_PROP_FPS, self.framerate)
 
     def _capture_loop_0(self):
         while self.running:
-            if self.cam0:
-                # capture_array() grabs the latest frame buffer. 
-                # Requesting it in the format initialized (YUV420) avoids RGB conversion overhead.
+            if Picamera2 is not None and hasattr(self.cam0, 'capture_array'):
                 frame = self.cam0.capture_array()
-                with self.lock0:
-                    self.frame0 = frame
+            elif self.cam0 and self.cam0.isOpened():
+                ret, frame = self.cam0.read()
+                if not ret: continue
+            else:
+                continue
+                
+            with self.lock0:
+                self.frame0 = frame
 
     def _capture_loop_1(self):
         while self.running:
-            if self.cam1:
+            if Picamera2 is not None and hasattr(self.cam1, 'capture_array'):
                 frame = self.cam1.capture_array()
-                with self.lock1:
-                    self.frame1 = frame
+            elif self.cam1 and self.cam1.isOpened():
+                ret, frame = self.cam1.read()
+                if not ret: continue
+            else:
+                continue
+                
+            with self.lock1:
+                self.frame1 = frame
 
     def start(self):
-        if self.cam0:
-            self.cam0.start()
-        if self.cam1:
-            self.cam1.start()
+        if Picamera2 is not None:
+            if self.cam0: self.cam0.start()
+            if self.cam1: self.cam1.start()
             
         self.running = True
         self.thread0 = threading.Thread(target=self._capture_loop_0, daemon=True)

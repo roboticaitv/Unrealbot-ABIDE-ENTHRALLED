@@ -10,6 +10,9 @@
 
 static const char* TAG = "ESPNOW";
 
+static uint8_t station_mac[6] = {0};
+static bool station_mac_set = false;
+
 struct msg_manual_t {
     char packet_type;
     float vx;
@@ -31,6 +34,21 @@ void OnDataSent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status
 
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incomingData, int len) {
     if (len == 0) return;
+
+    // Automatically register the Station as a peer so we can send telemetry back!
+    if (!station_mac_set) {
+        memcpy(station_mac, esp_now_info->src_addr, 6);
+        esp_now_peer_info_t peerInfo = {};
+        memcpy(peerInfo.peer_addr, station_mac, 6);
+        peerInfo.channel = 0;  
+        peerInfo.encrypt = false;
+        if (!esp_now_is_peer_exist(station_mac)) {
+            esp_now_add_peer(&peerInfo);
+        }
+        station_mac_set = true;
+        ESP_LOGI(TAG, "Registered Station MAC for Telemetry Uplink.");
+    }
+
     char packet_type = (char)incomingData[0];
 
     if (packet_type == 'M' && len == sizeof(msg_manual_t)) {
@@ -60,6 +78,12 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incoming
         cmd.timestamp = esp_timer_get_time();
 
         xQueueOverwrite(commandQueue, &cmd);
+    }
+}
+
+void espnow_send_telemetry(telemetry_packet_t* packet) {
+    if (station_mac_set) {
+        esp_now_send(station_mac, (uint8_t *)packet, sizeof(telemetry_packet_t));
     }
 }
 

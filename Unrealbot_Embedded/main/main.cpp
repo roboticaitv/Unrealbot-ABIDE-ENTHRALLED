@@ -253,6 +253,51 @@ void RobotLoopTask(void *parameters) {
     }
 }
 
+void TelemetryTask(void *pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50Hz Uplink
+
+    telemetry_packet_t t_packet;
+    t_packet.header = 'T';
+
+    while (1) {
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+
+        // Fetch Odometry
+        t_packet.pose_x = current_x;
+        t_packet.pose_y = current_y;
+        t_packet.pose_th = current_th;
+
+        // Fetch Kinematics
+        float v_fl = unitFL.angular_velocity_rads * WHEEL_RADIUS;
+        float v_fr = unitFR.angular_velocity_rads * WHEEL_RADIUS;
+        float v_rl = unitRL.angular_velocity_rads * WHEEL_RADIUS;
+
+        t_packet.vel_x = (-v_fl - v_fr + 2.0f * v_rl) / 3.0f;
+        t_packet.vel_y = (-sqrt(3.0f) * v_fl + sqrt(3.0f) * v_fr) / 3.0f;
+        t_packet.omega = (v_fl + v_fr + v_rl) / (3.0f * ROBOT_RADIUS);
+
+        // Read Motor Currents for Hardware Fault Embeddings
+        unitFL.motor->updateCurrentSense();
+        unitFR.motor->updateCurrentSense();
+        unitRL.motor->updateCurrentSense();
+        
+        t_packet.current_fl = unitFL.motor->getCurrent();
+        t_packet.current_fr = unitFR.motor->getCurrent();
+        t_packet.current_rl = unitRL.motor->getCurrent();
+
+        // Placeholders for IMU / Flow / IR
+        t_packet.accel_x = 0.0f;
+        t_packet.accel_y = 0.0f;
+        t_packet.gyro_z = 0.0f;
+        t_packet.sensors = 0;
+        
+        t_packet.timestamp = esp_timer_get_time() / 1000;
+
+        espnow_send_telemetry(&t_packet);
+    }
+}
+
 void SerialCommandTask(void *pvParameters) {
     // Make stdin non-blocking
     int flags = fcntl(fileno(stdin), F_GETFL);
@@ -348,6 +393,9 @@ extern "C" void app_main(void)
 
     // Launch Serial CLI Task pinned to Core 0 (shares CPU with WiFi/ESP-NOW)
     xTaskCreatePinnedToCore(SerialCommandTask, "SerialCLI", 8192, NULL, 5, NULL, 0);
+
+    // Launch Telemetry Task pinned to Core 0
+    xTaskCreatePinnedToCore(TelemetryTask, "Telemetry", 4096, NULL, 4, NULL, 0);
 
     // FreeRTOS idle loop for app_main
     while (1) {
