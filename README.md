@@ -1,38 +1,27 @@
-# ABIDE-ENTHRALLED
-Multi networks belief spaces AI for autonomus soccer bot
+# Unrealbot & ABIDE-ENTHRALLED 
 
-Code is programmed in Python 3.10.11 for best performance with TensorFlow and Keras.
+Welcome to the central integration repository for the **Unrealbot** and **ABIDE-ENTHRALLED** project ecosystem. This monorepo serves as the final unified codebase for the robot's hardware control, telemetry, station communication, and AI vision systems.
 
-# Creation Credits
+## 🏗️ Architecture & Components
 
-This project, **ABIDE-ENTHRALLED**, has been developed to explore and apply advanced techniques in **neural networks**, **machine learning**, and their implementation in an **autonomous futbot**.
+The project is highly modular, split between high-level computation (AI/Vision), remote telemetry, and low-level embedded hardware control.
 
-## Authors and Contributors
-- **Lead Author**: Yael López-González (alias: JellyRennyu)
-- **Contributors**: Altagracia Caridad Medina-Santiago, Carlos Parra Andrade (alias: Carlos Pulguita)
-- **Organization/Club**: Club de Robótica ITV
+### 1. Embedded Firmware (`/Unrealbot_Embedded`)
+The core firmware running on the robot's ESP32 coprocessor.
+- **Framework:** ESP-IDF (Currently being migrated from Arduino)
+- **Responsibilities:** Motor control (via DRV8251), PID loops, hardware interrupts, kinematics, and receiving/executing movement commands.
 
-## Inspiration and Goals
-The project is inspired by the intersection of:
-- Artificial intelligence applied to sports.
-- Deep learning for autonomous decision-making.
-- Collaborative robotics and intelligent systems.
+### 2. Manual Control & Telemetry (`/Controllerinput`)
+A Python-based application for remote telemetry and manual control.
+- **Responsibilities:** Captures gamepad/keyboard inputs and sends them to the station. Monitors telemetry data coming back from the bot.
 
-## Technologies Used
-- Python (Keras, TensorFlow, PyTorch)
-- Convolutional Neural Networks (CNNs)
-- Supervised and unsupervised learning algorithms
-- Git and GitHub for version control
+### 3. Base Station Bridge (`/Station_ESPNOW`)
+Code for the stationary ESP32 base station.
+- **Responsibilities:** Acts as a wireless bridge using the ESP-NOW protocol. It receives commands from the `Controllerinput` script via serial and transmits them wirelessly to the `Unrealbot_Embedded` ESP32 on the robot.
 
-## Acknowledgments
-Special thanks to:
-- The open-source community for libraries and resources.
-- Mentors and colleagues who supported the development.
-- Club de Robótica ITV for providing a collaborative space.
+### 4. AI & Vision (`/vision`, `/*.py`, etc.)
+- **Responsibilities:** Neural network models and computer vision pipelines (e.g., ball and goal recognition) for autonomous decision making.
 
----
+## 🚀 Getting Started
 
-> **Note:** This attribution document aims to recognize authorship, inspiration, and resources used in the creation of **ABIDE-ENTHRALLED**.  
-> Future contributors are encouraged to keep this section updated.
-
-
+*(Add detailed setup instructions for ESP-IDF, Python environment, and AI models here as they are developed)*

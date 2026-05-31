@@ -1,0 +1,17 @@
+{
+  "idf.currentSetup": "C:\\Users\\caser\\esp\\v5.5.1\\esp-idf",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "C:\\Users\\caser\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=c:\\Users\\caser\\OneDrive\\Documents\\GitHub\\Unrealbot-ABIDE-ENTHRALLED\\Unrealbot_Embedded\\build"
+  ],
+  "idf.portWin": "COM3",
+  "idf.flashType": "UART"
+}
