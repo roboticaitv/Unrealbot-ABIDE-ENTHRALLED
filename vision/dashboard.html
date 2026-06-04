@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Brain Dashboard</title>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #38bdf8;
+            border-bottom: 2px solid #334155;
+            padding-bottom: 10px;
+        }
+        .kv-pair {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-family: monospace;
+            font-size: 16px;
+        }
+        .key { color: #94a3b8; }
+        .value { color: #10b981; font-weight: bold; }
+        
+        .action-card {
+            grid-column: 1 / -1;
+            background: #0f172a;
+            border: 2px solid #38bdf8;
+        }
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            text-align: center;
+        }
+        .action-item {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .action-val {
+            font-size: 2em;
+            font-weight: bold;
+            color: #f59e0b;
+        }
+    </style>
+</head>
+<body>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #f8fafc; margin: 0;">Unrealbot AI Brain</h1>
+        <div id="status" style="color: #10b981;">Connected (60 Hz)</div>
+    </div>
+    
+    <div class="container">
+        <!-- AI Motor Outputs (Top Wide Card) -->
+        <div class="card action-card">
+            <h2>Live AI Actions (ENTHRALLED)</h2>
+            <div class="action-grid" id="action-container">
+                <div class="action-item"><div>Forward Vx</div><div class="action-val">0.00</div></div>
+                <div class="action-item"><div>Strafe Vy</div><div class="action-val">0.00</div></div>
+                <div class="action-item"><div>Turn Omega</div><div class="action-val">0.00</div></div>
+                <div class="action-item"><div>Kick Power</div><div class="action-val">0.00</div></div>
+            </div>
+        </div>
+
+        <!-- Raw Physics State -->
+        <div class="card">
+            <h2>Raw Sensory State (ABIDE)</h2>
+            <div id="state-container"></div>
+        </div>
+
+        <!-- Neural Network Embeddings -->
+        <div class="card">
+            <h2>Network Embeddings (Latent Space)</h2>
+            <div id="embed-container"></div>
+        </div>
+    </div>
+
+    <script>
+        function updateUI() {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update State
+                    const stateHtml = Object.entries(data.state).map(([k, v]) => 
+                        `<div class="kv-pair"><span class="key">${k}</span><span class="value">${v.toFixed(3)}</span></div>`
+                    ).join('');
+                    document.getElementById('state-container').innerHTML = stateHtml;
+
+                    // Update Actions
+                    if (data.action && Object.keys(data.action).length > 0) {
+                        const act = data.action;
+                        document.getElementById('action-container').innerHTML = `
+                            <div class="action-item"><div>Forward Vx</div><div class="action-val">${act.vx.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Strafe Vy</div><div class="action-val">${act.vy.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Turn Omega</div><div class="action-val">${act.omega.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Kick Power</div><div class="action-val">${act.kick.toFixed(2)}</div></div>
+                        `;
+                    }
+
+                    // Update Embeddings
+                    if (data.debug && data.debug.NET_A_emb) {
+                        const d = data.debug;
+                        document.getElementById('embed-container').innerHTML = `
+                            <div class="kv-pair"><span class="key">NET_A (Ball)</span><span class="value">[${d.NET_A_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                            <div class="kv-pair"><span class="key">NET_B (Self)</span><span class="value">[${d.NET_B_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                            <div class="kv-pair"><span class="key">NET_C (Threats)</span><span class="value">[${d.NET_C_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                            <div class="kv-pair"><span class="key">NET_T (Goal)</span><span class="value">[${d.NET_T_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('status').innerText = 'Disconnected';
+                    document.getElementById('status').style.color = '#ef4444';
+                });
+        }
+
+        // Poll at 10 Hz
+        setInterval(updateUI, 100);
+    </script>
+</body>
+</html>

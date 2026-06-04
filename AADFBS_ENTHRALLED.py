@@ -86,8 +86,8 @@ import matplotlib.pyplot as plt
 tf.random.set_seed(54)
 np.random.seed(13)
 
-INPUT_DIM = 32
-OUTPUT_DIM = 8
+INPUT_DIM = 32 # 6 (Net A) + 8 (Net B) + 6 (Net C) + 12 (Net T)
+OUTPUT_DIM = 9
 
 SAMPLES = 80000
 EPOCHS = 80
@@ -118,8 +118,8 @@ def generate_sample():
     # =========================
     # VARIABLES
     # =========================
-    ball_free = net_a[2]
-    shoot_window = net_a[3]
+    ball_free = net_a[1]
+    shoot_window = net_a[2]
 
     mobility = net_b[0]
     stability = net_b[2]
@@ -129,7 +129,7 @@ def generate_sample():
 
     pressure = net_t[0]
     defensive_overload = net_t[2]
-    emergency = net_t[11]
+    emergency = net_t[4]
 
     # =========================
     # PHYSICS ADJUSTMENTS
@@ -169,6 +169,7 @@ def generate_sample():
     else:
         v = 0.8 * (1 - ball_distance) * mobility
 
+    vy = 0.0 # Strafing
     w = np.clip((alignment - 0.5) * 2, -1, 1)
 
     if good_shot:
@@ -191,7 +192,7 @@ def generate_sample():
     x = np.concatenate([net_a, net_b, net_c, net_t])
 
     y = np.array([
-        v, w, kick, urgency, aggr, defense, pass_pref, emergency_flag
+        v, vy, w, kick, urgency, aggr, defense, pass_pref, emergency_flag
     ], dtype=np.float32)
 
     return x, y
@@ -216,11 +217,11 @@ def custom_loss(y_true, y_pred):
 
     mse = tf.reduce_mean(tf.square(y_true - y_pred))
 
-    wrong_kick = tf.maximum(0.0, y_pred[:,2] - y_true[:,2])
+    wrong_kick = tf.maximum(0.0, y_pred[:,3] - y_true[:,3])
 
-    miss_kick = tf.maximum(0.0, y_true[:,2] - y_pred[:,2])
+    miss_kick = tf.maximum(0.0, y_true[:,3] - y_pred[:,3])
 
-    conflict = tf.maximum(0.0, y_pred[:,4] - tf.abs(y_pred[:,0]))
+    conflict = tf.maximum(0.0, y_pred[:,5] - tf.abs(y_pred[:,0]))
 
     return (
         mse
@@ -287,7 +288,7 @@ plt.plot(history.history["val_loss"], label="val")
 plt.legend()
 plt.grid()
 plt.title("ENTHRALLED TRAINING")
-plt.show()
+# # plt.show()
 
 # =========================
 # SAVE

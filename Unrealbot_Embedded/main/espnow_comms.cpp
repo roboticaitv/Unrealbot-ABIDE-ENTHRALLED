@@ -6,12 +6,10 @@
 #include "nvs_flash.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
+#include "driver/uart.h"
 #include <string.h>
 
 static const char* TAG = "ESPNOW";
-
-static uint8_t station_mac[6] = {0};
-static bool station_mac_set = false;
 
 struct msg_manual_t {
     char packet_type;
@@ -34,20 +32,6 @@ void OnDataSent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status
 
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incomingData, int len) {
     if (len == 0) return;
-
-    // Automatically register the Station as a peer so we can send telemetry back!
-    if (!station_mac_set) {
-        memcpy(station_mac, esp_now_info->src_addr, 6);
-        esp_now_peer_info_t peerInfo = {};
-        memcpy(peerInfo.peer_addr, station_mac, 6);
-        peerInfo.channel = 0;  
-        peerInfo.encrypt = false;
-        if (!esp_now_is_peer_exist(station_mac)) {
-            esp_now_add_peer(&peerInfo);
-        }
-        station_mac_set = true;
-        ESP_LOGI(TAG, "Registered Station MAC for Telemetry Uplink.");
-    }
 
     char packet_type = (char)incomingData[0];
 
@@ -78,13 +62,19 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incoming
         cmd.timestamp = esp_timer_get_time();
 
         xQueueOverwrite(commandQueue, &cmd);
+    } 
+    else if (packet_type == 'E' && len == sizeof(msg_embeddings_t)) {
+        // Forward Allied Embeddings directly to Pi over USB, encoded with COBS
+        uint8_t encoded[128];
+        size_t enc_len = cobs_encode(incomingData, len, encoded);
+        encoded[enc_len++] = 0x00;
+        uart_write_bytes(UART_NUM_0, encoded, enc_len);
     }
 }
 
-void espnow_send_telemetry(telemetry_packet_t* packet) {
-    if (station_mac_set) {
-        esp_now_send(station_mac, (uint8_t *)packet, sizeof(telemetry_packet_t));
-    }
+void espnow_broadcast_embeddings(msg_embeddings_t* packet) {
+    uint8_t broadcast_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    esp_now_send(broadcast_mac, (uint8_t *)packet, sizeof(msg_embeddings_t));
 }
 
 void setup_espnow() {
@@ -108,5 +98,13 @@ void setup_espnow() {
     ESP_ERROR_CHECK(esp_now_register_send_cb(OnDataSent));
     ESP_ERROR_CHECK(esp_now_register_recv_cb(OnDataRecv));
 
-    ESP_LOGI(TAG, "ESP-NOW Initialized.");
+    // Register Broadcast Peer
+    uint8_t broadcast_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, broadcast_mac, 6);
+    peerInfo.channel = 0;  
+    peerInfo.encrypt = false;
+    ESP_ERROR_CHECK(esp_now_add_peer(&peerInfo));
+
+    ESP_LOGI(TAG, "ESP-NOW Initialized (Broadcast Peer Added).");
 }

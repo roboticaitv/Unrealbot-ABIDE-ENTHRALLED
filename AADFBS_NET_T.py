@@ -49,7 +49,7 @@ np.random.seed(1448)
 tf.random.set_seed(145)
 
 SEQ_LEN = 20 # Max legnth plays considered
-EMBED_DIM = 18 # Embedding per play
+EMBED_DIM = 20 # Embedding per play
 HIST_EMBED = 12
 
 NUM_HEADS = 12 # Multiple attention
@@ -77,7 +77,7 @@ x = Add()([x, ff])
 x = LayerNormalization()(x)
 
 # Temporal aggregations
-x = tf.reduce_mean(x, axis=1)
+x = tf.keras.layers.GlobalAveragePooling1D()(x)
 
 # Projections to the historical embedding
 outputs = Dense(HIST_EMBED, activation="linear")(x)
@@ -101,16 +101,16 @@ def generate_sequence():
     future_context = np.array([
         np.mean(seq[:, 0:6]), # Pressure trend
         np.mean(seq[:, 6]), # Momentum proxy
-        np.mean(seq[:, 12]), # defensive overlod
+        np.mean(seq[:, 14]), # defensive overlod
         np.mean(seq[:, 7]), # counter readiness
-        np.std(seq[:, 12:18]), # risk
+        np.std(seq[:, 14:20]), # risk
         np.mean(np.diff(seq[:, 0])), # Tempo
-        1.0 - np.std(seq[:, 6:12]),
+        1.0 - np.std(seq[:, 6:14]),
         np.std(seq),
         1.0 if np.mean(seq[:, 0]) > 0.7 else 0.0,
-        1.0 if np.mean(seq[:,12]) > 0.7 else 0.0,
-        1.0 if np.mean(seq[:,6]) > 0.6 else 0.0,
-        1.0 if np.mean(seq[:,12]) > 0.8 else 0.0
+        1.0 if np.mean(seq[:, 14]) > 0.7 else 0.0,
+        1.0 if np.mean(seq[:, 6]) > 0.6 else 0.0,
+        1.0 if np.mean(seq[:, 14]) > 0.8 else 0.0
     ], dtype=np.float32)
 
     return seq, future_context
@@ -161,7 +161,7 @@ plt.title("NET_T - Historical Context Transformer Loss")
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.show()
+# # plt.show()
 
 # model saveq
 model.save("AADFBS_NET_T.h5")

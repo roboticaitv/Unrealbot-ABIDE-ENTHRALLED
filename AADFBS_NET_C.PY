@@ -226,7 +226,7 @@ plt.ylabel("MSE")
 plt.title("NET_C - ENEMY EMBEDDING LOSS")
 plt.legend()
 plt.grid(True)
-plt.show()
+# # plt.show()
 
 # Semantic test beliefs (FOR ONLY MANUAL VALIDATION)
 test_beliefs = np.array([

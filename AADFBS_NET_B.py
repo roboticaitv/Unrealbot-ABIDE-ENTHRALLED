@@ -182,7 +182,7 @@ plt.xlabel("Epoch")
 plt.ylabel("Loss")
 plt.legend()
 plt.grid(True)
-plt.show()
+# # plt.show()
 
 # Final test
 test_states = np.random.rand(5, N_SELF_STATES).astype(np.float32)

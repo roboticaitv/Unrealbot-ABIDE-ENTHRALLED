@@ -4,15 +4,19 @@ from dual_camera import DualCamera
 from color_tracking import ColorTracker
 from aruco_tracker import IntermittentArucoTracker
 from hitbox_math import filter_threats
+from state_tracker import StateTracker
 
 class VisionManager:
     def __init__(self):
         # Initialize the hardware
-        self.cameras = DualCamera(resolution=(1640, 1232), framerate=83, format="YUV420")
+        self.cameras = DualCamera(resolution=(832, 624), framerate=83, format="YUV420")
         
         # Initialize the trackers
         self.color_tracker = ColorTracker()
-        self.aruco_tracker = IntermittentArucoTracker(interval=10)
+        self.aruco_tracker0 = IntermittentArucoTracker(interval=10)
+        self.aruco_tracker1 = IntermittentArucoTracker(interval=10)
+        self.state_tracker0 = StateTracker()
+        self.state_tracker1 = StateTracker()
         
         self.running = False
 
@@ -48,41 +52,38 @@ class VisionManager:
         }
 
         # 1. High Speed Color Tracking (Using YUV directly)
-        # Assuming f0 is the main forward-facing camera for the ball
-        color_results = self.color_tracker.process_yuv_frame(f0)
-        state["ball"] = color_results["ball"]
-        state["blue_goal"] = color_results["blue_goal"]
-        state["yellow_goal"] = color_results["yellow_goal"]
+        det0 = self.color_tracker.process_yuv_frame(f0)
+        det1 = self.color_tracker.process_yuv_frame(f1)
 
         # 2. Intermittent ArUco Tracking
         # Convert Y channel of YUV to grayscale for ArUco
-        # If it's a BGR frame from testing, we convert to gray. 
-        # For pure YUV420, Y is the first channel block.
         if len(f0.shape) == 3 and f0.shape[2] == 3:
-            gray = cv2.cvtColor(f0, cv2.COLOR_BGR2GRAY)
+            gray0 = cv2.cvtColor(f0, cv2.COLOR_BGR2GRAY)
+            gray1 = cv2.cvtColor(f1, cv2.COLOR_BGR2GRAY)
         else:
-            # Assuming pure Y plane if pulling raw from libcamera
-            gray = f0 
+            # Extract just the Y plane for grayscale
+            h = f0.shape[0] * 2 // 3
+            gray0 = f0[:h, :]
+            gray1 = f1[:h, :]
 
-        aruco_positions = self.aruco_tracker.process_frame(gray)
+        aruco_positions0 = self.aruco_tracker0.process_frame(gray0)
+        aruco_positions1 = self.aruco_tracker1.process_frame(gray1)
         
-        # Map known Aruco IDs to allies (e.g., ID 1 is us, ID 2 is our teammate)
-        # Store their bounding boxes conceptually for hitbox math (just making 50x50 boxes around centers for now)
-        ally_boxes = []
-        for marker_id, (cx, cy) in aruco_positions.items():
-            state["allies"][marker_id] = (cx, cy)
-            ally_boxes.append((cx - 25, cy - 25, 50, 50))
+        ally_boxes0 = [(cx - 25, cy - 25, 50, 50) for cx, cy, _ in aruco_positions0.values()]
+        ally_boxes1 = [(cx - 25, cy - 25, 50, 50) for cx, cy, _ in aruco_positions1.values()]
 
         # 3. Fast Algebraic Hitbox Math
-        # Instead of doing mask subtraction, we check generic unknown moving blobs.
-        # For demonstration, assume we have a list of `unknown_blobs` from a basic background subtractor
-        # or non-colored contour list.
-        unknown_blobs = [] # Replace with actual unknown contour boxes if needed
-        
-        true_threats = filter_threats(unknown_blobs, ally_boxes, safe_radius=30)
-        state["threats"] = true_threats
+        threats0 = filter_threats(det0.get("unknowns", []), ally_boxes0, safe_radius=30)
+        threats1 = filter_threats(det1.get("unknowns", []), ally_boxes1, safe_radius=30)
 
-        return state
+        # 4. State Tracking & Merging
+        state0 = self.state_tracker0.update(det0, threats0, aruco_positions0)
+        state1 = self.state_tracker1.update(det1, threats1, aruco_positions1)
+        
+        # Merge logic: Currently prioritizing CAM 0 (Front) if it sees the ball, else CAM 1
+        final_state = state0 if det0["ball"] else state1
+
+        return final_state
 
 if __name__ == "__main__":
     vision = VisionManager()

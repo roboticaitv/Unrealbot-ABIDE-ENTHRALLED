@@ -11,6 +11,7 @@
 #include "espnow_comms.h"
 #include "PMW3901.h"
 #include "ICM45686.h"
+#include "driver/uart.h"
 
 static const char* TAG = "MAIN";
 
@@ -294,57 +295,65 @@ void TelemetryTask(void *pvParameters) {
         
         t_packet.timestamp = esp_timer_get_time() / 1000;
 
-        espnow_send_telemetry(&t_packet);
+        uint8_t encoded[128];
+        size_t enc_len = cobs_encode((uint8_t*)&t_packet, sizeof(telemetry_packet_t), encoded);
+        encoded[enc_len++] = 0x00;
+        uart_write_bytes(UART_NUM_0, encoded, enc_len);
     }
 }
 
 void SerialCommandTask(void *pvParameters) {
-    // Make stdin non-blocking
-    int flags = fcntl(fileno(stdin), F_GETFL);
-    fcntl(fileno(stdin), F_SETFL, flags | O_NONBLOCK);
-
-    char buf[128];
-    int pos = 0;
-
     robot_command_t last_cmd = {};
     bool serial_active = false;
 
+    uint8_t rx_buffer[128];
+    size_t rx_idx = 0;
+
     while (1) {
-        int c = fgetc(stdin);
-        if (c != EOF) {
-            if (c == '\n' || c == '\r') {
-                buf[pos] = '\0';
-                if (pos > 0) {
-                    char type = 0;
-                    float f1 = 0, f2 = 0, f3 = 0;
-                    if (sscanf(buf, "%c %f %f %f", &type, &f1, &f2, &f3) >= 1) {
-                        if (type == 'P' || type == 'p') {
-                            last_cmd.mode = 1;
-                            last_cmd.arg1 = f1; last_cmd.arg2 = f2; last_cmd.arg3 = f3;
-                            last_cmd.kick_strength = 0;
-                            serial_active = true;
-                            ESP_LOGI("SERIAL", "Streaming Pose: %.2f %.2f %.2f", f1, f2, f3);
-                        } else if (type == 'M' || type == 'm' || type == 'V' || type == 'v') {
+        uint8_t byte;
+        int len = uart_read_bytes(UART_NUM_0, &byte, 1, pdMS_TO_TICKS(10));
+        
+        if (len == 1) {
+            if (byte == 0x00) {
+                if (rx_idx > 0) {
+                    uint8_t decoded[128];
+                    size_t dec_len = cobs_decode(rx_buffer, rx_idx, decoded);
+                    
+                    if (dec_len > 0) {
+                        uint8_t header = decoded[0];
+                        if ((header == 'M' || header == 'm') && dec_len == 17) {
+                            float payload[4];
+                            memcpy(payload, decoded + 1, 16);
                             last_cmd.mode = 0;
-                            last_cmd.arg1 = f1; last_cmd.arg2 = f2; last_cmd.arg3 = f3;
+                            last_cmd.arg1 = payload[0]; last_cmd.arg2 = payload[1]; last_cmd.arg3 = payload[2];
+                            last_cmd.kick_strength = (uint8_t)payload[3];
+                            serial_active = true;
+                        } else if ((header == 'P' || header == 'p') && dec_len == 17) {
+                            float payload[4];
+                            memcpy(payload, decoded + 1, 16);
+                            last_cmd.mode = 1;
+                            last_cmd.arg1 = payload[0]; last_cmd.arg2 = payload[1]; last_cmd.arg3 = payload[2];
                             last_cmd.kick_strength = 0;
                             serial_active = true;
-                            ESP_LOGI("SERIAL", "Streaming Velocity: %.2f %.2f %.2f", f1, f2, f3);
-                        } else if (type == 'S' || type == 's') {
+                        } else if (header == 'E' && dec_len == sizeof(msg_embeddings_t)) {
+                            msg_embeddings_t emb;
+                            memcpy(&emb, decoded, sizeof(msg_embeddings_t));
+                            espnow_broadcast_embeddings(&emb);
+                        } else if (header == 'S' || header == 's') {
                             serial_active = false;
-                            ESP_LOGI("SERIAL", "Stopped serial stream");
                         }
                     }
+                    rx_idx = 0;
                 }
-                pos = 0;
             } else {
-                if (pos < sizeof(buf) - 1) buf[pos++] = (char)c;
+                if (rx_idx < sizeof(rx_buffer)) {
+                    rx_buffer[rx_idx++] = byte;
+                } else {
+                    rx_idx = 0; // Overflow, drop packet
+                }
             }
         } else {
-            // EOF, wait a bit
-            vTaskDelay(pdMS_TO_TICKS(20));
-            
-            // Re-feed the queue if serial_active to keep the 250ms watchdog fed
+            // Timeout hit, feed the safety watchdog
             if (serial_active) {
                 last_cmd.timestamp = esp_timer_get_time();
                 xQueueOverwrite(commandQueue, &last_cmd);
@@ -361,6 +370,9 @@ extern "C" void app_main(void)
     gpio_reset_pin((gpio_num_t)SOLENOID_PIN);
     gpio_set_direction((gpio_num_t)SOLENOID_PIN, GPIO_MODE_OUTPUT);
     
+    // Install UART driver for COBS telemetry / command stream
+    uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
+
     setup_robot(); 
     // setup_spi(); // Temporarily disabled
     setup_espnow();

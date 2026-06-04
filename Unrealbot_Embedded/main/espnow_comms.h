@@ -2,4 +2,4 @@
 #include "futbolito.h"
 
 void setup_espnow();
-void espnow_send_telemetry(telemetry_packet_t* packet);
+void espnow_broadcast_embeddings(msg_embeddings_t* packet);

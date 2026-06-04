@@ -1,7 +1,7 @@
 #pragma once
 #include "spi_sensors.h"
-#include "Arduino.h" // for delay
-
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 class Custom_PMW3901 {
   private:
     // Low level register access
@@ -35,7 +35,7 @@ class Custom_PMW3901 {
       registerWrite(0x45, 0x0F); registerWrite(0x44, 0x42); registerWrite(0x4C, 0x80);
       registerWrite(0x7F, 0x10); registerWrite(0x5B, 0x02); registerWrite(0x7F, 0x07);
       registerWrite(0x40, 0x41); registerWrite(0x70, 0x00);
-      delay(100);
+      vTaskDelay(pdMS_TO_TICKS(100));
       registerWrite(0x32, 0x44); registerWrite(0x7F, 0x07); registerWrite(0x40, 0x40);
       registerWrite(0x7F, 0x06); registerWrite(0x62, 0xf0); registerWrite(0x63, 0x00);
       registerWrite(0x7F, 0x0D); registerWrite(0x48, 0xC0); registerWrite(0x6F, 0xd5);
@@ -49,7 +49,7 @@ class Custom_PMW3901 {
     bool begin(void) {
       // Power on reset
       registerWrite(0x3A, 0x5A);
-      delay(5);
+      vTaskDelay(pdMS_TO_TICKS(5));
       
       // Test the SPI communication
       uint8_t chipId = registerRead(0x00);
@@ -60,7 +60,7 @@ class Custom_PMW3901 {
       // Reading the motion registers one time
       registerRead(0x02); registerRead(0x03); registerRead(0x04);
       registerRead(0x05); registerRead(0x06);
-      delay(1);
+      vTaskDelay(pdMS_TO_TICKS(1));
 
       initRegisters();
       return true;

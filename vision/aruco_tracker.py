@@ -33,13 +33,17 @@ class IntermittentArucoTracker:
                 self.last_corners = corners
                 self.last_ids = ids.flatten()
                 
-                # Calculate centers
+                # Calculate centers and apparent widths
                 self.last_known_positions.clear()
                 for i, marker_id in enumerate(self.last_ids):
                     c = corners[i][0]
                     cx = int((c[0][0] + c[1][0] + c[2][0] + c[3][0]) / 4)
                     cy = int((c[0][1] + c[1][1] + c[2][1] + c[3][1]) / 4)
-                    self.last_known_positions[marker_id] = (cx, cy)
+                    # Apparent width in pixels (average of top and bottom edge)
+                    top_w = np.sqrt((c[1][0]-c[0][0])**2 + (c[1][1]-c[0][1])**2)
+                    bot_w = np.sqrt((c[2][0]-c[3][0])**2 + (c[2][1]-c[3][1])**2)
+                    apparent_px = (top_w + bot_w) / 2.0
+                    self.last_known_positions[marker_id] = (cx, cy, apparent_px)
             else:
                 # We lost them
                 self.last_known_positions.clear()

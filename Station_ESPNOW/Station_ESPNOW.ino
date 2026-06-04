@@ -11,10 +11,10 @@ typedef struct __attribute__((packed)) msg_manual_t {
   float vx;
   float vy;
   float omega;
-  uint8_t KickFire;  
+  float kick_strength;  
 } msg_manual_t;
 
-// We know the struct is exactly 14 bytes long
+// We know the struct is exactly 17 bytes long
 const int PACKET_SIZE = sizeof(msg_manual_t);
 uint8_t serialBuffer[PACKET_SIZE];
 

@@ -37,21 +37,25 @@ class DualCamera:
             self._init_opencv_fallback()
 
     def _init_picamera2(self):
-        try:
-            self.cam0 = Picamera2(camera=0)
-            config0 = self.cam0.create_preview_configuration(
-                main={"size": self.resolution, "format": self.format, "framerate": self.framerate}
-            )
-            self.cam0.configure(config0)
-            
-            self.cam1 = Picamera2(camera=1)
-            config1 = self.cam1.create_preview_configuration(
-                main={"size": self.resolution, "format": self.format, "framerate": self.framerate}
-            )
-            self.cam1.configure(config1)
-            print(f"Picamera2 initialized at {self.resolution} @ {self.framerate} FPS")
-        except Exception as e:
-            print(f"Failed to initialize Picamera2: {e}")
+        # Initialize each camera independently so one failure doesn't kill both
+        for cam_idx in [0, 1]:
+            try:
+                cam = Picamera2(cam_idx)
+                config = cam.create_preview_configuration(
+                    main={"size": self.resolution, "format": self.format}
+                )
+                cam.configure(config)
+                if cam_idx == 0:
+                    self.cam0 = cam
+                else:
+                    self.cam1 = cam
+                print(f"  Camera {cam_idx} initialized at {self.resolution}")
+            except Exception as e:
+                print(f"  WARNING: Camera {cam_idx} failed to initialize: {e}")
+        
+        if self.cam0 is None and self.cam1 is None:
+            print("CRITICAL: No cameras initialized! Falling back to OpenCV.")
+            self._init_opencv_fallback()
 
     def _init_opencv_fallback(self):
         print("Using standard OpenCV VideoCapture fallback...")
@@ -112,21 +116,71 @@ class DualCamera:
             self.thread1.join()
             
         if self.cam0:
-            self.cam0.stop()
+            if Picamera2 is not None: self.cam0.stop()
+            else: self.cam0.release()
         if self.cam1:
-            self.cam1.stop()
+            if Picamera2 is not None: self.cam1.stop()
+            else: self.cam1.release()
         print("Cameras stopped.")
 
+    def _crop_stride(self, frame):
+        """
+        Reconstruct a clean I420 frame without stride padding.
+        
+        Picamera2 returns YUV420 (I420) frames where each row is padded to
+        a stride boundary. In the I420 layout (shape: H*3/2, stride):
+          - Y plane: H rows × stride (valid: W columns)
+          - U plane: H/4 rows × stride; packs H/2 logical rows of stride/2,
+            valid W/2 columns per logical row
+          - V plane: same as U
+        
+        Simply cropping columns corrupts U/V (barcode artifacts) because
+        two logical chroma rows share one physical row. We must unpack
+        each plane, crop to valid width, and repack.
+        """
+        if frame is None:
+            return None
+        req_w = self.resolution[0]
+        req_h = self.resolution[1]
+        stride = frame.shape[1]
+        
+        if stride <= req_w:
+            return frame  # No padding
+        
+        half_w = req_w // 2
+        half_h = req_h // 2
+        quarter_h = req_h // 4
+        half_stride = stride // 2
+        
+        # Y plane: crop columns to requested width
+        y = frame[:req_h, :req_w]
+        
+        # U plane: unpack 2 logical rows per physical row, crop, repack
+        u_packed = frame[req_h : req_h + quarter_h, :]
+        u = np.ascontiguousarray(
+            u_packed.reshape(half_h, half_stride)[:, :half_w]
+        )
+        u_clean = u.reshape(quarter_h, req_w)
+        
+        # V plane: same treatment
+        v_packed = frame[req_h + quarter_h : req_h + 2 * quarter_h, :]
+        v = np.ascontiguousarray(
+            v_packed.reshape(half_h, half_stride)[:, :half_w]
+        )
+        v_clean = v.reshape(quarter_h, req_w)
+        
+        return np.ascontiguousarray(np.vstack([y, u_clean, v_clean]))
+
     def get_frames(self):
-        """Returns the latest (frame0, frame1). They might be None if not yet captured."""
+        """Returns the latest (frame0, frame1) with stride padding removed."""
         f0 = None
         f1 = None
         with self.lock0:
             if self.frame0 is not None:
-                f0 = self.frame0.copy()
+                f0 = self._crop_stride(self.frame0.copy())
         with self.lock1:
             if self.frame1 is not None:
-                f1 = self.frame1.copy()
+                f1 = self._crop_stride(self.frame1.copy())
         return f0, f1
 
 if __name__ == "__main__":
