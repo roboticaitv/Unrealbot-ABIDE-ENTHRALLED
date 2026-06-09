@@ -98,10 +98,38 @@
             fetch('/data')
                 .then(response => response.json())
                 .then(data => {
-                    // Update State
-                    const stateHtml = Object.entries(data.state).map(([k, v]) => 
-                        `<div class="kv-pair"><span class="key">${k}</span><span class="value">${v.toFixed(3)}</span></div>`
-                    ).join('');
+                    // Update State (Categorized)
+                    const formatVal = (v) => typeof v === 'number' ? v.toFixed(2) : String(v);
+                    
+                    let stateHtml = '';
+                    const categories = {
+                        "Ball Tracking": ['ball_distance_norm', 'ball_angle_deg', 'ball_speed_norm', 'ball_direction_alignment', 'ball_possession_ego', 'ball_possession_ally'],
+                        "Localization (Ego)": ['ego_x', 'ego_y_abs', 'ego_pose_confidence', 'ego_speed_norm', 'ego_accel_norm', 'yaw_rate_norm', 'slip_indicator'],
+                        "Enemy Tracking": ['enemy1_distance_norm', 'enemy1_velocity_norm', 'enemy_pressure_level', 'enemy_observation_conf', 'enemy_blocking_lane'],
+                        "Goal Geometry": ['blue_goal_distance_mm', 'blue_goal_angle_deg', 'yellow_goal_distance_mm', 'yellow_goal_angle_deg', 'shot_opportunity_ego']
+                    };
+
+                    for (const [catName, keys] of Object.entries(categories)) {
+                        stateHtml += `<div style="color:#f59e0b; margin-top:10px; margin-bottom:5px; font-weight:bold; border-bottom: 1px solid #334155;">${catName}</div>`;
+                        for (const k of keys) {
+                            if (data.state[k] !== undefined) {
+                                stateHtml += `<div class="kv-pair"><span class="key">${k.replace('_norm', '')}</span><span class="value">${formatVal(data.state[k])}</span></div>`;
+                            }
+                        }
+                    }
+                    
+                    // Add any uncategorized keys at the bottom
+                    const categorizedKeys = new Set(Object.values(categories).flat());
+                    let uncategorized = '';
+                    for (const [k, v] of Object.entries(data.state)) {
+                        if (!categorizedKeys.has(k)) {
+                            uncategorized += `<div class="kv-pair"><span class="key">${k}</span><span class="value">${formatVal(v)}</span></div>`;
+                        }
+                    }
+                    if (uncategorized) {
+                        stateHtml += `<div style="color:#f59e0b; margin-top:10px; margin-bottom:5px; font-weight:bold; border-bottom: 1px solid #334155;">Other</div>` + uncategorized;
+                    }
+
                     document.getElementById('state-container').innerHTML = stateHtml;
 
                     // Update Actions

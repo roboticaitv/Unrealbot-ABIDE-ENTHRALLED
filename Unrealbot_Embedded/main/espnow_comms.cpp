@@ -65,10 +65,10 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incoming
     } 
     else if (packet_type == 'E' && len == sizeof(msg_embeddings_t)) {
         // Forward Allied Embeddings directly to Pi over USB, encoded with COBS
-        uint8_t encoded[128];
-        size_t enc_len = cobs_encode(incomingData, len, encoded);
-        encoded[enc_len++] = 0x00;
-        uart_write_bytes(UART_NUM_0, encoded, enc_len);
+        // uint8_t encoded[128];
+        // size_t enc_len = cobs_encode(incomingData, len, encoded);
+        // encoded[enc_len++] = 0x00;
+        // uart_write_bytes(UART_NUM_0, encoded, enc_len);
     }
 }
 

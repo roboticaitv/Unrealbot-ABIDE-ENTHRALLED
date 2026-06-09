@@ -1,21 +1,80 @@
 import time
 import math as m
+import cv2
 import numpy as np
-from collections import deque
+from vision_config import config
+
+class CVKalmanFilter:
+    def __init__(self, timeout=1.5):
+        self.kf = cv2.KalmanFilter(4, 2)
+        self.kf.measurementMatrix = np.array([[1, 0, 0, 0],
+                                              [0, 1, 0, 0]], np.float32)
+        self.kf.transitionMatrix = np.array([[1, 0, 1, 0],
+                                             [0, 1, 0, 1],
+                                             [0, 0, 1, 0],
+                                             [0, 0, 0, 1]], np.float32)
+        self.kf.processNoiseCov = np.eye(4, dtype=np.float32) * 0.03
+        self.kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 0.5
+        
+        self.last_update_time = 0
+        self.timeout = timeout
+        self.initialized = False
+        self.last_size = 0  # Store apparent size for distance calculation when coasting
+        
+    def update(self, x, y, size):
+        current_time = time.perf_counter()
+        dt = current_time - self.last_update_time if self.initialized else 0.033
+        self.kf.transitionMatrix[0, 2] = dt
+        self.kf.transitionMatrix[1, 3] = dt
+        self.last_size = size
+        
+        meas = np.array([[x], [y]], dtype=np.float32)
+        
+        if not self.initialized:
+            self.kf.statePre = np.array([[x], [y], [0.0], [0.0]], dtype=np.float32)
+            self.kf.statePost = np.array([[x], [y], [0.0], [0.0]], dtype=np.float32)
+            self.initialized = True
+            self.last_update_time = current_time
+            return x, y, 0.0, 0.0, size
+            
+        self.kf.correct(meas)
+        pred = self.kf.predict()
+        self.last_update_time = current_time
+        return float(pred[0]), float(pred[1]), float(pred[2]), float(pred[3]), size
+        
+    def predict(self):
+        current_time = time.perf_counter()
+        if not self.initialized or (current_time - self.last_update_time > self.timeout):
+            self.initialized = False
+            return None, None, 0.0, 0.0, 0
+            
+        dt = current_time - self.last_update_time
+        self.kf.transitionMatrix[0, 2] = dt
+        self.kf.transitionMatrix[1, 3] = dt
+        pred = self.kf.predict()
+        self.last_update_time = current_time
+        return float(pred[0]), float(pred[1]), float(pred[2]), float(pred[3]), self.last_size
 
 class StateTracker:
     def __init__(self, fps=30):
-        # Configuration
-        self.FOCAL_LENGTH_EQ = 470
-        self.EDGE_CORRECTION = 0.0
-        self.BALL_SIZE_MM = 43
-        self.ROBOT_SIZE_MM = 180
-        self.FRAME_WIDTH = 820
-        self.FRAME_HEIGHT = 616
+        # Load Configuration
+        self.FOCAL_LENGTH_EQ = config["camera"]["focal_length_eq"]
+        self.EDGE_CORRECTION = config["camera"]["edge_correction"]
+        self.FRAME_WIDTH = config["camera"]["image_cx"] * 2
+        self.FRAME_HEIGHT = config["camera"]["image_cy"] * 2
         
-        self.history_len = 5
-        self.ball_history = deque(maxlen=self.history_len)
-        self.enemy_history = deque(maxlen=self.history_len)
+        self.BALL_SIZE_MM = config["physics"]["ball_diameter_mm"]
+        self.ROBOT_SIZE_MM = config["physics"]["robot_size_mm"]
+        self.GOAL_WIDTH_MM = config["physics"]["goal_width_mm"]
+        
+        self.MAX_DIST = config["physics"]["max_distance_mm"]
+        self.MAX_VEL = config["physics"]["max_velocity_px_s"]
+        self.FIELD_LENGTH_MM = config.get("physics", {}).get("field_length_mm", 2400.0)
+        self.TEAM_COLOR = config.get("physics", {}).get("team_color", "blue")
+        TIMEOUT = config.get("physics", {}).get("kalman_timeout_sec", 1.5)
+        
+        self.ball_kf = CVKalmanFilter(timeout=TIMEOUT)
+        self.enemy_kf = CVKalmanFilter(timeout=TIMEOUT)
         
         self.last_time = time.perf_counter()
         
@@ -46,27 +105,32 @@ class StateTracker:
         
         return base_distance * correction
 
-    def _calculate_velocity(self, history):
-        """Calculates pixel velocity over the recorded history window."""
-        if len(history) < 2:
-            return 0.0
+    def _calculate_velocity(self, vx, vy):
+        """Returns normalized velocity magnitude from Kalman vector."""
+        vel_px_s = m.sqrt(vx*vx + vy*vy)
+        return min(1.0, vel_px_s / self.MAX_VEL)
+
+    def _localize_ego(self, state):
+        """Triangulate absolute X coordinate using distance to both goals."""
+        d_blue = state.get("blue_goal_distance_mm", -1)
+        d_yellow = state.get("yellow_goal_distance_mm", -1)
+        
+        if d_blue > 0 and d_yellow > 0:
+            L = self.FIELD_LENGTH_MM
+            # Geometric intersection of two circles on the X axis:
+            # (x - L)^2 + y^2 = d_blue^2
+            # x^2 + y^2 = d_yellow^2
+            # x = (L^2 - d_blue^2 + d_yellow^2) / (2L)
+            x = (L*L - d_blue*d_blue + d_yellow*d_yellow) / (2 * L)
+            state["ego_x"] = x
             
-        oldest = history[0]
-        newest = history[-1]
-        
-        dt = newest['time'] - oldest['time']
-        if dt <= 0:
-            return 0.0
-            
-        dx = newest['x'] - oldest['x']
-        dy = newest['y'] - oldest['y']
-        dist_px = m.sqrt(dx*dx + dy*dy)
-        
-        speed_px_per_sec = dist_px / dt
-        
-        # Normalize: assuming max reasonable speed on screen is ~1000px/s
-        norm_speed = min(1.0, speed_px_per_sec / 1000.0)
-        return norm_speed
+            y_sq = d_yellow*d_yellow - x*x
+            state["ego_y_abs"] = m.sqrt(y_sq) if y_sq > 0 else 0.0
+            state["ego_pose_confidence"] = 1.0
+        elif d_blue > 0 or d_yellow > 0:
+            state["ego_pose_confidence"] = 0.5
+        else:
+            state["ego_pose_confidence"] = 0.0
 
     def _line_intersects_rect(self, p1, p2, rect):
         """Checks if line segment p1->p2 intersects a bounding box."""
@@ -158,7 +222,7 @@ class StateTracker:
             for marker_id, data in aruco_positions.items():
                 cx, cy, apparent_size = data
                 dist_mm = self._get_distance(apparent_size, 50, cx, cy) # 50mm ArUco
-                state["ally_distance_norm"] = min(1.0, dist_mm / 3000.0)
+                state["ally_distance_norm"] = min(1.0, dist_mm / self.MAX_DIST)
                 break
         
         # ── 1. Ball Physics ──
@@ -166,50 +230,84 @@ class StateTracker:
             bx, by, bw, bh = detections["ball"]["bbox"]
             cx = bx + bw/2
             cy = by + bh/2
-            
-            dist_mm = self._get_distance(max(bw, bh), self.BALL_SIZE_MM, cx, cy)
-            state["ball_distance_norm"] = min(1.0, dist_mm / 3000.0) 
-            
-            state["ball_direction_alignment"] = cx / self.FRAME_WIDTH
-            
-            self.ball_history.append({'x': cx, 'y': cy, 'time': current_time})
-            state["ball_speed_norm"] = self._calculate_velocity(self.ball_history)
+            size = max(bw, bh)
+            kx, ky, kvx, kvy, _ = self.ball_kf.update(cx, cy, size)
         else:
-            self.ball_history.clear()
+            kx, ky, kvx, kvy, size = self.ball_kf.predict()
+
+        if kx is not None:
+            dist_mm = self._get_distance(size, self.BALL_SIZE_MM, kx, ky)
+            state["ball_distance_norm"] = min(1.0, dist_mm / self.MAX_DIST) 
+            state["ball_direction_alignment"] = kx / self.FRAME_WIDTH
+            
+            # Calculate precise angle using fisheye equidistant projection (r = f * theta)
+            dx = kx - (self.FRAME_WIDTH / 2.0)
+            theta_rad = dx / self.FOCAL_LENGTH_EQ
+            state["ball_angle_deg"] = m.degrees(theta_rad)
+            
+            state["ball_speed_norm"] = self._calculate_velocity(kvx, kvy)
+            # Store smoothed coords for geometry later
+            ball_geom = (kx, ky)
+        else:
+            ball_geom = None
 
         # ── 2. Enemy Physics ──
         threats.sort(key=lambda t: t[2]*t[3], reverse=True)
         
         if len(threats) > 0:
             ex, ey, ew, eh = threats[0]
-            dist_mm = self._get_distance(ew, self.ROBOT_SIZE_MM, ex+ew/2, ey+eh/2)
-            state["enemy1_distance_norm"] = min(1.0, dist_mm / 3000.0)
+            cx, cy = ex+ew/2, ey+eh/2
+            kx, ky, kvx, kvy, _ = self.enemy_kf.update(cx, cy, ew)
+        else:
+            kx, ky, kvx, kvy, ew = self.enemy_kf.predict()
             
-            self.enemy_history.append({'x': ex+ew/2, 'y': ey+eh/2, 'time': current_time})
-            state["enemy1_velocity_norm"] = self._calculate_velocity(self.enemy_history)
-            
-            # If the enemy is visible and stable
+        if kx is not None:
+            dist_mm = self._get_distance(ew, self.ROBOT_SIZE_MM, kx, ky)
+            state["enemy1_distance_norm"] = min(1.0, dist_mm / self.MAX_DIST)
+            state["enemy1_velocity_norm"] = self._calculate_velocity(kvx, kvy)
             state["enemy_observation_conf"] = 1.0 
             
-            # Simple pressure level heuristic: If enemy is very close (<0.3 norm dist), pressure is high
+            # Simple pressure level heuristic
             if state["enemy1_distance_norm"] < 0.3:
                 state["enemy_pressure_level"] = 1.0 - (state["enemy1_distance_norm"] / 0.3)
         else:
-            self.enemy_history.clear()
+            state["enemy_observation_conf"] = 0.0
 
-        # ── 3. Shot Opportunity (Geometric Intersection) ──
-        target_goal = None
+        # ── 3. Goals & Shot Opportunity ──
+        # Find which goal is our target based on config
+        target_key = "blue_goal" if self.TEAM_COLOR == "blue" else "yellow_goal"
+        target_goal_pt = None
+        
         if detections.get("blue_goal"):
             bx, by, bw, bh = detections["blue_goal"]["bbox"]
-            target_goal = (bx + bw/2, by + bh) 
+            cx = bx + bw/2
+            cy = by + bh/2
+            if target_key == "blue_goal":
+                target_goal_pt = (cx, by + bh) 
             
-        if target_goal and detections["ball"]:
-            ball_cx = detections["ball"]["bbox"][0] + detections["ball"]["bbox"][2]/2
-            ball_cy = detections["ball"]["bbox"][1] + detections["ball"]["bbox"][3]/2
+            dist_mm = self._get_distance(bw, self.GOAL_WIDTH_MM, cx, cy)
+            state["blue_goal_distance_mm"] = dist_mm
+            dx = cx - (self.FRAME_WIDTH / 2.0)
+            state["blue_goal_angle_deg"] = m.degrees(dx / self.FOCAL_LENGTH_EQ)
             
+        if detections.get("yellow_goal"):
+            bx, by, bw, bh = detections["yellow_goal"]["bbox"]
+            cx = bx + bw/2
+            cy = by + bh/2
+            if target_key == "yellow_goal":
+                target_goal_pt = (cx, by + bh)
+            
+            dist_mm = self._get_distance(bw, self.GOAL_WIDTH_MM, cx, cy)
+            state["yellow_goal_distance_mm"] = dist_mm
+            dx = cx - (self.FRAME_WIDTH / 2.0)
+            state["yellow_goal_angle_deg"] = m.degrees(dx / self.FOCAL_LENGTH_EQ)
+            
+        self._localize_ego(state)
+            
+        if target_goal_pt and ball_geom:
             shot_blocked = False
             for threat in threats:
-                if self._line_intersects_rect((ball_cx, ball_cy), target_goal, threat):
+                if self._line_intersects_rect(ball_geom, target_goal_pt, threat):
                     shot_blocked = True
                     break
             

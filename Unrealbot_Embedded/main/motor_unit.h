@@ -11,6 +11,7 @@ struct MotorUnit {
 
   // Encoder state
   int32_t accumulated_ticks = 0;
+  int32_t last_hardware_count = 0;
   bool control_did_read     = false;
 
   // Velocity filter
@@ -30,8 +31,9 @@ struct MotorUnit {
 
   // Call from supervisor task (CLEANED UP!)
   void supervisorTick(bool did_read) {
-    int16_t delta = (int16_t)encoder->getCount();
-    encoder->clear();
+    int32_t current_count = encoder->getCount();
+    int16_t delta = (int16_t)(current_count - last_hardware_count);
+    last_hardware_count = current_count;
     accumulated_ticks += delta;
   }
 

@@ -230,10 +230,27 @@ void RobotLoopTask(void *parameters) {
                 is_kicking = false;
             }
 
-            // --- Logging ---
+            // --- Logging (Teleplot Format) ---
             print_divider++;
-            if (print_divider >= 50) {
-                ESP_LOGI(TAG, "X:%.2f Y:%.2f Th:%.2f", current_x, current_y, current_th);
+            if (print_divider >= 25) { // 20Hz update rate
+                printf(">X:%.2f\n", current_x);
+                printf(">Y:%.2f\n", current_y);
+                printf(">Th:%.2f\n", current_th);
+                
+                printf(">FL_Tgt:%.2f\n", target_rads_fl);
+                printf(">FL_Vel:%.2f\n", unitFL.angular_velocity_rads);
+                
+                printf(">FR_Tgt:%.2f\n", target_rads_fr);
+                printf(">FR_Vel:%.2f\n", unitFR.angular_velocity_rads);
+                
+                printf(">RL_Tgt:%.2f\n", target_rads_rl);
+                printf(">RL_Vel:%.2f\n", unitRL.angular_velocity_rads);
+                
+                // Print Raw Ticks
+                printf(">FL_Ticks:%ld\n", unitFL.accumulated_ticks);
+                printf(">FR_Ticks:%ld\n", unitFR.accumulated_ticks);
+                printf(">RL_Ticks:%ld\n", unitRL.accumulated_ticks);
+                
                 print_divider = 0;
             }
         }
@@ -298,7 +315,10 @@ void TelemetryTask(void *pvParameters) {
         uint8_t encoded[128];
         size_t enc_len = cobs_encode((uint8_t*)&t_packet, sizeof(telemetry_packet_t), encoded);
         encoded[enc_len++] = 0x00;
-        uart_write_bytes(UART_NUM_0, encoded, enc_len);
+        
+        // --- BINARY OUTPUT DISABLED --- 
+        // The user wants clean ASCII logs in idf.py monitor, so we stop blasting binary here.
+        // uart_write_bytes(UART_NUM_0, encoded, enc_len);
     }
 }
 

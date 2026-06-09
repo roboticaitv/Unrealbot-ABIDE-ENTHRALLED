@@ -4,8 +4,7 @@ import threading
 import time
 import json
 import os
-import json
-import os
+import argparse
 import math as m
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from dual_camera import DualCamera
@@ -14,8 +13,10 @@ from aruco_tracker import IntermittentArucoTracker
 from hitbox_math import filter_threats
 from state_tracker import StateTracker
 from ai_engine import AIEngine
+from vision_config import config
 
 # Globals
+SHOW_HUD = True
 cameras = DualCamera(resolution=(832, 624), framerate=83, format="YUV420")
 tracker = ColorTracker()
 aruco0 = IntermittentArucoTracker(interval=10)
@@ -24,115 +25,21 @@ st0 = StateTracker()
 st1 = StateTracker()
 ai_engine = AIEngine(models_dir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "ONNX_models"))
 
-# ── Camera calibration for IMX219 + 200° fisheye lens at 1640x1232 ──
-# Focal length: 2.4mm (NOT the stock 3.04mm), pixel pitch at 2x bin: 2.24µm
-# Equidistant fisheye model: r = f_eq * θ
-# Half-diagonal FOV: 100° = 1.745 rad
-# Half-diagonal in pixels: sqrt(820² + 616²) ≈ 1026 px
-# f_equidistant = 1026 / 1.745 ≈ 588 px
-FOCAL_LENGTH_EQ = 470
-IMAGE_CX = 820   # Optical center X (half of 1640)
-IMAGE_CY = 616   # Optical center Y (half of 1232)
+# ── Camera calibration ──
+FOCAL_LENGTH_EQ = config["camera"]["focal_length_eq"]
+IMAGE_CX = config["camera"]["image_cx"]
+IMAGE_CY = config["camera"]["image_cy"]
 
-# Known physical sizes (millimeters) — CHANGE THESE TO MATCH YOUR OBJECTS
-BALL_DIAMETER_MM = 43      # Standard orange golf ball ≈ 42.67mm
-ARUCO_SIZE_MM = 50         # Printed ArUco marker side length (5cm)
+# Known physical sizes (millimeters)
+BALL_DIAMETER_MM = config["physics"]["ball_diameter_mm"]
+ARUCO_SIZE_MM = config["physics"]["aruco_size_mm"]
 
 latest_jpeg = None
 jpeg_lock = threading.Lock()
 latest_data = {"state": {}, "action": {}, "debug": {}}
 data_lock = threading.Lock()
 
-def estimate_distance_mm(known_size_mm, apparent_size_px, obj_cx=IMAGE_CX, obj_cy=IMAGE_CY):
-    """
-    Fisheye equidistant model distance estimation.
-    
-    In a fisheye lens, the pixel offset from center maps to an angle: θ = r / f_eq
-    The apparent angular size of the object lets us compute distance:
-        angular_size = apparent_size_px / f_eq  (radians)
-        distance = known_size_mm / (2 * tan(angular_size / 2))
-    
-    For objects near the center this behaves like the classic pinhole model.
-    For objects near the edges (where fisheye distortion is extreme), this
-    correctly compensates for the stretching.
-    """
-    if apparent_size_px <= 0:
-        return -1
-    
-    # Angular size of the object in radians
-    angular_size = apparent_size_px / FOCAL_LENGTH_EQ
-    
-    # Avoid division by zero for objects that fill the frame
-    half_angle = angular_size / 2.0
-    if half_angle >= m.pi / 2:
-        return -1
-    
-    return known_size_mm / (2.0 * m.tan(half_angle))
-
-
-
-def draw_detections(bgr_frame, detections, aruco_positions, threats, state, cam_label="CAM"):
-    """Draw bounding boxes, labels, distances, threats, and a HUD data panel."""
-    hud_lines = [cam_label]
-    
-    # ── Draw Horizon ──
-    if "horizon_y" in detections:
-        hy = detections["horizon_y"]
-        cv2.line(bgr_frame, (0, hy), (bgr_frame.shape[1], hy), (255, 0, 255), 2)
-        cv2.putText(bgr_frame, "HORIZON", (10, hy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-    
-    # ── Ball ──
-    if detections["ball"]:
-        x, y, w, h = detections["ball"]["bbox"]
-        cv2.rectangle(bgr_frame, (x, y), (x + w, y + h), (0, 165, 255), 2)
-        hud_lines.append(f"Ball Dist: {state['ball_distance_norm']:.2f}")
-        hud_lines.append(f"Ball Spd: {state['ball_speed_norm']:.2f}")
-        hud_lines.append(f"Shot Opp: {state['shot_opportunity_ego']:.2f}")
-    else:
-        hud_lines.append("Ball: ---")
-        
-    # ── Goals ──
-    if detections["blue_goal"]:
-        x, y, w, h = detections["blue_goal"]["bbox"]
-        cv2.rectangle(bgr_frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-        
-    if detections["yellow_goal"]:
-        x, y, w, h = detections["yellow_goal"]["bbox"]
-        cv2.rectangle(bgr_frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
-    else:
-        hud_lines.append("Yellow Goal: ---")
-    
-    # ── ArUco ──
-    if aruco_positions:
-        for marker_id, data in aruco_positions.items():
-            cx, cy, apparent_size = data
-            cv2.circle(bgr_frame, (int(cx), int(cy)), int(apparent_size//2), (0, 255, 0), 2)
-    
-    # ── Enemies (Threats) ──
-    if len(threats) > 0:
-        hud_lines.append(f"E1 Dist: {state['enemy1_distance_norm']:.2f}")
-        hud_lines.append(f"E1 Spd: {state['enemy1_velocity_norm']:.2f}")
-        for i, (x, y, w, h) in enumerate(threats):
-            cv2.rectangle(bgr_frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
-            cv2.putText(bgr_frame, f"ENEMY", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-    
-    if not threats:
-        hud_lines.append("Enemies: ---")
-    
-    # ── Draw HUD panel ──
-    line_h = 36
-    panel_h = line_h * len(hud_lines) + 16
-    # Semi-transparent dark bar
-    overlay = bgr_frame.copy()
-    cv2.rectangle(overlay, (0, 0), (bgr_frame.shape[1], panel_h), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.6, bgr_frame, 0.4, 0, bgr_frame)
-    
-    # Write each line
-    for i, line in enumerate(hud_lines):
-        color = (0, 255, 0) if i == 0 else (255, 255, 255)
-        cv2.putText(bgr_frame, line, (10, 30 + i * line_h), cv2.FONT_HERSHEY_SIMPLEX, 0.85, color, 2, cv2.LINE_AA)
-    
-    return bgr_frame
+from hud import draw_detections
 
 def yuv420_to_bgr(frame):
     """Convert a YUV420 planar frame to BGR for display."""
@@ -168,11 +75,15 @@ def processing_loop():
         det0 = tracker.process_yuv_frame(f0_raw)
         det1 = tracker.process_yuv_frame(f1_raw)
         
-        # Run ArUco on both cameras
+        # Run ArUco on both cameras, physically sliced at the horizon to save ~50% CPU!
         gray0 = get_grayscale(f0_raw)
         gray1 = get_grayscale(f1_raw)
-        aruco_det0 = aruco0.process_frame(gray0)
-        aruco_det1 = aruco1.process_frame(gray1)
+        
+        hy0 = int(det0.get("horizon_y", 0))
+        hy1 = int(det1.get("horizon_y", 0))
+        
+        aruco_det0 = aruco0.process_frame(gray0[hy0:, :], y_offset=hy0)
+        aruco_det1 = aruco1.process_frame(gray1[hy1:, :], y_offset=hy1)
         
         # Run enemy detection
         ally_boxes0 = []
@@ -202,8 +113,8 @@ def processing_loop():
             latest_data["debug"] = debug if debug else {}
             
         # Draw overlays with HUD
-        bgr0 = draw_detections(bgr0, det0, aruco_det0, threats0, state0, "CAM 0")
-        bgr1 = draw_detections(bgr1, det1, aruco_det1, threats1, state1, "CAM 1")
+        bgr0 = draw_detections(bgr0, det0, aruco_det0, threats0, state0, "CAM 0", show_hud=SHOW_HUD)
+        bgr1 = draw_detections(bgr1, det1, aruco_det1, threats1, state1, "CAM 1", show_hud=SHOW_HUD)
         
         # Combine side-by-side for stream
         combined = cv2.hconcat([bgr0, bgr1])
@@ -346,6 +257,13 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         pass  # Suppress HTTP request logs
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Unrealbot Live Stream")
+    parser.add_argument('--no-hud', action='store_true', help="Disable the HUD overlay to reduce stream bandwidth and save CPU")
+    args = parser.parse_args()
+    
+    if args.no_hud:
+        SHOW_HUD = False
+
     # Start the processing thread
     proc_thread = threading.Thread(target=processing_loop, daemon=True)
     proc_thread.start()

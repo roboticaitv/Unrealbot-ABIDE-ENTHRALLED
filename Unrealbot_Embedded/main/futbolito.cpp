@@ -1,6 +1,6 @@
 #include "futbolito.h"
 
-DRV8251 motorFL(13, 14, -1, LEDC_CHANNEL_0);
+DRV8251 motorFL(14, 13, -1, LEDC_CHANNEL_0);
 DRV8251 motorFR(3,  8,  -1, LEDC_CHANNEL_1);
 DRV8251 motorRL(11, 12, -1, LEDC_CHANNEL_2);
 DRV8251 motorRR(9,  10, -1, LEDC_CHANNEL_3);
