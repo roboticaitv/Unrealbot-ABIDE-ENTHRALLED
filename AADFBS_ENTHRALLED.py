@@ -97,7 +97,7 @@ LR = 1e-4
 # =========================
 # INTELIGENT SAMPLE GENERATION
 # =========================
-def generate_sample():
+def generate_sample(scenario=0):
 
     # =========================
     # INPUTS BASE
@@ -116,10 +116,29 @@ def generate_sample():
     blocking = np.random.uniform(0, 1)
 
     # =========================
+    # FORCE SCENARIOS (DATASET BALANCING)
+    # =========================
+    if scenario == 1: # FORCED SHOT (Aggressive)
+        ball_distance = np.random.uniform(0, 0.25)
+        alignment = np.random.uniform(0.6, 1.0)
+        blocking = np.random.uniform(0, 0.4)
+        net_a[1] = np.random.uniform(0, 0.3) # Low enemy threat
+        net_a[3] = np.random.uniform(0.7, 1.0) # High shoot window
+    elif scenario == 2: # FORCED PASS
+        ball_distance = np.random.uniform(0, 0.2)
+        alignment = np.random.uniform(0, 0.4) # Bad alignment for shot
+        blocking = np.random.uniform(0.6, 1.0) # Blocked by enemy
+        net_b[4] = np.random.uniform(0.7, 1.0) # Ally coordination high
+    elif scenario == 3: # FORCED DANGER / DEFENSE
+        enemy_distance = np.random.uniform(0, 0.3)
+        net_c[0] = np.random.uniform(0.7, 1.0) # High enemy threat
+        net_t[4] = np.random.uniform(0.7, 1.0) # Emergency
+
+    # =========================
     # VARIABLES
     # =========================
-    ball_free = net_a[1]
-    shoot_window = net_a[2]
+    ball_free = net_a[2]
+    shoot_window = net_a[3]
 
     mobility = net_b[0]
     stability = net_b[2]
@@ -138,73 +157,81 @@ def generate_sample():
     shoot_window *= alignment * (1 - blocking)
 
     # =========================
-    # GOOD CONDITIONS
+    # AGGRESSIVE CONDITIONS
     # =========================
     good_shot = (
-        ball_distance < 0.2 and
-        alignment > 0.8 and
-        blocking < 0.3 and
-        enemy_threat < 0.4
+        ball_distance < 0.35 and
+        alignment > 0.5 and
+        blocking < 0.5
     )
 
     bad_shot = (
-        ball_distance > 0.3 or
-        alignment < 0.5 or
-        blocking > 0.5
+        ball_distance > 0.5 or
+        alignment < 0.3 or
+        blocking > 0.7
     )
+
+    # El estado de emergencia propio de NET_B (incluye el riesgo de salir de la linea)
+    self_emergency = net_b[6]
 
     danger = (
-        enemy_threat > 0.6 or
-        interception > 0.5 or
-        emergency > 0.7
+        enemy_threat > 0.7 or
+        interception > 0.7 or
+        emergency > 0.8 or
+        (self_emergency > 0.6 and not good_shot) # Huir de la linea SOLO si no estamos atacando porteria
     )
 
     # =========================
-    # OUTPUTS
+    # AGGRESSIVE OUTPUTS
     # =========================
 
-    # VELOCITY
+    # VELOCITY: Always go maximum speed if not in danger
     if danger:
-        v = -0.6
+        v = -1.0 # Max reverse
     else:
-        v = 0.8 * (1 - ball_distance) * mobility
+        v = 1.0 * mobility # Max forward speed
 
     vy = 0.0 # Strafing
-    w = np.clip((alignment - 0.5) * 2, -1, 1)
+    w = np.clip((alignment - 0.5) * 2.5, -1, 1) # Fast turning
 
+    # KICKING: Maximize kick when possible
     if good_shot:
         kick = 1.0
     elif bad_shot:
         kick = 0.0
     else:
-        kick = 0.2 * shoot_window
+        kick = 0.5 * shoot_window
 
     urgency = np.clip(pressure + (1 - ball_distance), 0, 1)
-
-    aggr = np.clip((1 - enemy_threat) * alignment, 0, 1)
+    
+    aggr = 1.0 if not danger else 0.0
 
     defense = np.clip(enemy_threat + defensive_overload, 0, 1)
 
-    pass_pref = np.clip(blocking * (1 - alignment), 0, 1)
+    # Passing: If blocked and ally available, pass hard
+    if blocking > 0.5 and alignment < 0.5 and net_b[4] > 0.5:
+        pass_pref = 1.0
+        kick = 0.8 # Force a kick to pass
+    else:
+        pass_pref = 0.0
 
     emergency_flag = 1.0 if danger else 0.0
 
     x = np.concatenate([net_a, net_b, net_c, net_t])
-
     y = np.array([
         v, vy, w, kick, urgency, aggr, defense, pass_pref, emergency_flag
     ], dtype=np.float32)
 
     return x, y
 
-
 # =========================
 # DATASET
 # =========================
 def build_dataset(n):
     X, Y = [], []
-    for _ in range(n):
-        x, y = generate_sample()
+    for i in range(n):
+        scenario = i % 4 # Balance the 4 scenarios equally
+        x, y = generate_sample(scenario)
         X.append(x)
         Y.append(y)
     return np.array(X), np.array(Y)

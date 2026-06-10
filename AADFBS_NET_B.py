@@ -89,10 +89,14 @@ def semantic_penalty(y_pred):
     control = y_pred[:, 7]
     stability = y_pred[:, 2]
 
-    p1 = tf.maximum(0.0, emergency + stability - 1.0)
-    p2 = tf.maximum(0.0, emergency + control - 1.0)
+    # The old penalty assumed that emergency and stability were mutually exclusive.
+    # But a robot can be perfectly stable while driving straight into the boundary line!
+    # So we remove the penalty between emergency and stability.
+    
+    # We only penalize if control is very high during an emergency
+    p2 = tf.maximum(0.0, emergency + control - 1.5)
 
-    return tf.reduce_mean(p1 + p2)
+    return tf.reduce_mean(p2)
 
 def total_loss(y_true, y_pred):
     return weighted_mse(y_true, y_pred) + 0.3 * semantic_penalty(y_pred)
