@@ -1,0 +1,4 @@
+{
+  "vision/rpi_serial_test.py": true,
+  "vision_test/rpi_serial_test.py": true
+}

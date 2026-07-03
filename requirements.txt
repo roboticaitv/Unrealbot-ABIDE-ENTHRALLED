@@ -1,0 +1,13 @@
+# Unrealbot Autonomy Requirements for Raspberry Pi (Edge Execution)
+# --------------------------------------------------------------
+# Estos paquetes son los mínimos necesarios para que el robot 
+# procese visión e IA en tiempo real en la Raspberry Pi.
+
+numpy
+opencv-python-headless
+onnxruntime
+pyserial
+
+# (Opcional) Si en el futuro se migran los modelos ONNX a TFLite
+# para optimizar rendimiento en la Pi:
+tflite-runtime

@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/CMakeFiles/bootloader
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/CMakeFiles/bootloader.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/CMakeFiles/bootloader-complete.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

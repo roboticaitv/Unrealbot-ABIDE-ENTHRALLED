@@ -1,0 +1,6 @@
+{
+    "idf.currentSetup": "C:\\Users\\caser\\esp\\v5.5.1\\esp-idf",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-builtin.cfg"
+    ]
+}

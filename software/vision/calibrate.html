@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Unrealbot Field Calibrator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial; background: #121212; color: white; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; }
+        .panel { background: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        h2 { margin-top: 0; color: #4CAF50; border-bottom: 1px solid #333; padding-bottom: 10px;}
+        .color-group { margin-bottom: 15px; }
+        .color-group label { display: inline-block; width: 60px; font-weight: bold; }
+        .slider-row { display: flex; align-items: center; margin-bottom: 5px; }
+        .slider-row input[type="range"] { flex-grow: 1; margin: 0 15px; }
+        .slider-row span { width: 40px; text-align: right; }
+        .orange { color: #ff9800; }
+        .blue { color: #2196F3; }
+        .yellow { color: #ffeb3b; }
+        .green { color: #8bc34a; }
+        .camera { color: #e91e63; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Unrealbot Field Calibrator</h1>
+        <p>Changes apply instantly to the live stream.</p>
+        
+        <div id="sliders">Loading configuration...</div>
+    </div>
+
+    <script>
+        const colors = [
+            { id: 'orange', name: 'Ball (Orange)', class: 'orange' },
+            { id: 'blue', name: 'Blue Goal', class: 'blue' },
+            { id: 'yellow', name: 'Yellow Goal', class: 'yellow' },
+            { id: 'green', name: 'Field (Green)', class: 'green' }
+        ];
+
+        let config = {};
+
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                config = await response.json();
+                renderSliders();
+            } catch (e) {
+                document.getElementById('sliders').innerText = 'Error loading config.';
+            }
+        }
+
+        async function updateConfig() {
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+            } catch (e) {
+                console.error("Failed to update");
+            }
+        }
+
+        function handleSlider(category, key, value) {
+            config[category][key] = parseFloat(value);
+            document.getElementById(`${category}_${key}_val`).innerText = value;
+            updateConfig();
+        }
+
+        function createColorSliders(colorDef) {
+            const cat = colorDef.id;
+            if (!config[cat]) return '';
+            
+            return `
+            <div class="panel">
+                <h2 class="${colorDef.class}">${colorDef.name}</h2>
+                ${['u_min', 'u_max', 'v_min', 'v_max'].map(key => `
+                    <div class="slider-row">
+                        <label>${key}</label>
+                        <input type="range" min="0" max="255" value="${config[cat][key]}" 
+                            oninput="handleSlider('${cat}', '${key}', this.value)">
+                        <span id="${cat}_${key}_val">${config[cat][key]}</span>
+                    </div>
+                `).join('')}
+            </div>`;
+        }
+
+        function createCameraSliders() {
+            if (!config.camera) return '';
+            const cat = 'camera';
+            return `
+            <div class="panel">
+                <h2 class="camera">Camera & Fisheye</h2>
+                <div class="slider-row">
+                    <label>FOCAL</label>
+                    <input type="range" min="100" max="1000" step="5" value="${config.camera.focal_length_eq}" 
+                        oninput="handleSlider('camera', 'focal_length_eq', this.value)">
+                    <span id="camera_focal_length_eq_val">${config.camera.focal_length_eq}</span>
+                </div>
+                <div class="slider-row">
+                    <label>EDGE_K</label>
+                    <input type="range" min="-1.0" max="1.0" step="0.05" value="${config.camera.edge_correction}" 
+                        oninput="handleSlider('camera', 'edge_correction', this.value)">
+                    <span id="camera_edge_correction_val">${config.camera.edge_correction}</span>
+                </div>
+            </div>`;
+        }
+
+        function renderSliders() {
+            let html = createCameraSliders();
+            colors.forEach(c => { html += createColorSliders(c); });
+            document.getElementById('sliders').innerHTML = html;
+        }
+
+        fetchConfig();
+    </script>
+</body>
+</html>

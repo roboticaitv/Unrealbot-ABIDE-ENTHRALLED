@@ -1,0 +1,2 @@
+source /home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader/gdbinit/symbols
+source /home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader/gdbinit/connect

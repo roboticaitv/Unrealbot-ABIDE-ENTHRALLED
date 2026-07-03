@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Panel de Control del Cerebro de IA</title>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #38bdf8;
+            border-bottom: 2px solid #334155;
+            padding-bottom: 10px;
+        }
+        .kv-pair {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-family: monospace;
+            font-size: 16px;
+        }
+        .key { color: #94a3b8; }
+        .value { color: #10b981; font-weight: bold; }
+        
+        .action-card {
+            grid-column: 1 / -1;
+            background: #0f172a;
+            border: 2px solid #38bdf8;
+        }
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .action-item {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .action-val {
+            font-size: 2em;
+            font-weight: bold;
+            color: #f59e0b;
+        }
+    </style>
+</head>
+<body>
+    <div style="text-align: center; margin-bottom: 20px; position: relative;">
+        <div style="position: absolute; top: 0; left: 0;">
+            <a href="/" style="background: #334155; color: #f8fafc; padding: 10px 20px; text-decoration: none; font-family: sans-serif; font-weight: bold; border-radius: 5px; border: 1px solid #475569;">&larr; Volver al Video</a>
+        </div>
+        <h1 style="color: #f8fafc; margin: 0;">Cerebro de IA Unrealbot</h1>
+        <div id="status" style="color: #10b981;">Conectado (60 Hz)</div>
+    </div>
+    
+    <div class="container">
+        <!-- AI Motor Outputs (Top Wide Card) -->
+        <div class="card action-card">
+            <h2>Acciones de IA en Vivo (ENTHRALLED)</h2>
+            <div class="action-grid" id="action-container">
+                <div class="action-item"><div>Velocidad Frontal (Vx)</div><div class="action-val">0.00</div></div>
+                <div class="action-item"><div>Giro (W)</div><div class="action-val">0.00</div></div>
+                <div class="action-item"><div>Urgencia</div><div class="action-val">0.00</div></div>
+                <div class="action-item"><div>Emergencia</div><div class="action-val">0.00</div></div>
+            </div>
+            <div id="action-interpretation" style="padding: 15px; background: #334155; border-radius: 8px; color: #38bdf8; font-weight: bold; text-align: center; font-size: 1.4em; letter-spacing: 1px;">
+                Esperando conexión neuronal...
+            </div>
+        </div>
+
+        <!-- Raw Physics State -->
+        <div class="card">
+            <h2>Estado Sensorial Crudo (ABIDE)</h2>
+            <div id="state-container"></div>
+        </div>
+
+        <!-- Neural Network Embeddings -->
+        <div class="card">
+            <h2>Incrustaciones Neuronales (Espacio Latente)</h2>
+            <div id="embed-container"></div>
+        </div>
+    </div>
+
+    <script>
+        function updateUI() {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update State (Categorized)
+                    const formatVal = (v) => typeof v === 'number' ? v.toFixed(2) : String(v);
+                    
+                    let stateHtml = '';
+                    const categories = {
+                        "Rastreo de Balón": ['ball_distance_norm', 'ball_angle_deg', 'ball_speed_norm', 'ball_direction_alignment', 'ball_possession_ego', 'ball_possession_ally'],
+                        "Localización (Ego)": ['ego_x', 'ego_y_abs', 'ego_pose_confidence', 'ego_speed_norm', 'ego_accel_norm'],
+                        "Rastreo de Enemigos": ['enemy1_distance_norm', 'enemy1_velocity_norm', 'enemy_pressure_level', 'enemy_observation_conf', 'enemy_blocking_lane'],
+                        "Geometría de Porterías": ['blue_goal_distance_m', 'blue_goal_angle_deg', 'yellow_goal_distance_m', 'yellow_goal_angle_deg', 'shot_opportunity_ego']
+                    };
+                    
+                    const units = {
+                        'ball_distance_norm': ' m',
+                        'ball_angle_deg': ' °',
+                        'ball_speed_norm': ' px/s',
+                        'ego_speed_norm': ' ticks/s',
+                        'ego_accel_norm': ' g',
+                        'ego_accel_norm': ' g',
+                        'ally_distance_norm': ' m',
+                        'enemy1_distance_norm': ' m',
+                        'enemy1_velocity_norm': ' px/s',
+                        'blue_goal_distance_m': ' m',
+                        'yellow_goal_distance_m': ' m',
+                        'blue_goal_angle_deg': ' °',
+                        'yellow_goal_angle_deg': ' °'
+                    };
+
+                    for (const [catName, keys] of Object.entries(categories)) {
+                        stateHtml += `<div style="color:#f59e0b; margin-top:10px; margin-bottom:5px; font-weight:bold; border-bottom: 1px solid #334155;">${catName}</div>`;
+                        for (const k of keys) {
+                            if (data.state[k] !== undefined) {
+                                const unit = units[k] || '';
+                                stateHtml += `<div class="kv-pair"><span class="key">${k.replace('_norm', '')}</span><span class="value">${formatVal(data.state[k])}${unit}</span></div>`;
+                            }
+                        }
+                    }
+                    
+                    // Add any uncategorized keys at the bottom
+                    const categorizedKeys = new Set(Object.values(categories).flat());
+                    let uncategorized = '';
+                    for (const [k, v] of Object.entries(data.state)) {
+                        if (!categorizedKeys.has(k)) {
+                            const unit = units[k] || '';
+                            uncategorized += `<div class="kv-pair"><span class="key">${k}</span><span class="value">${formatVal(v)}${unit}</span></div>`;
+                        }
+                    }
+                    if (uncategorized) {
+                        stateHtml += `<div style="color:#f59e0b; margin-top:10px; margin-bottom:5px; font-weight:bold; border-bottom: 1px solid #334155;">Otros (Secundarios)</div>` + uncategorized;
+                    }
+
+                    document.getElementById('state-container').innerHTML = stateHtml;
+
+                    // Update Actions
+                    if (data.action && Object.keys(data.action).length > 0) {
+                        const act = data.action;
+                        
+                        const colorVx = act.vx > 0.2 ? '#10b981' : (act.vx < -0.2 ? '#ef4444' : '#f59e0b');
+                        const colorUrg = act.urgency > 0.7 ? '#ef4444' : '#10b981';
+                        const colorEmerg = act.emergency > 0.5 ? '#ef4444' : '#94a3b8';
+                        
+                        document.getElementById('action-container').innerHTML = `
+                            <div class="action-item"><div>Velocidad Frontal (Vx)</div><div class="action-val" style="color: ${colorVx}">${act.vx.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Giro (W)</div><div class="action-val">${act.omega.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Fuerza Disparo</div><div class="action-val">${act.kick.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Pref. de Pase</div><div class="action-val">${act.pass_pref.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Agresividad</div><div class="action-val">${act.aggression.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Defensa</div><div class="action-val">${act.defense.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Urgencia</div><div class="action-val" style="color: ${colorUrg}">${act.urgency.toFixed(2)}</div></div>
+                            <div class="action-item"><div>Emergencia</div><div class="action-val" style="color: ${colorEmerg}">${act.emergency.toFixed(2)}</div></div>
+                        `;
+                        
+                        let interp = "👀 Explorando la cancha...";
+                        if (act.emergency > 0.8) {
+                            interp = "🚨 ¡MANIOBRA EVASIVA DE EMERGENCIA! 🚨";
+                        } else if (act.defense > 0.6 && act.vx < -0.3) {
+                            interp = "🛡️ Modo Defensivo: Retrocediendo rápido por amenaza";
+                        } else if (act.aggression > 0.7 && act.vx > 0.4) {
+                            interp = "⚔️ ¡Ataque Frontal! Yendo por el objetivo";
+                        } else if (act.kick > 0.5) {
+                            interp = "⚽ ¡PREPARANDO DISPARO O PASE!";
+                        } else if (Math.abs(act.omega) > 0.4 && Math.abs(act.vx) < 0.2) {
+                            interp = "🔄 Girando sobre su eje buscando objetivos...";
+                        } else if (act.urgency > 0.6) {
+                            interp = "⚠️ Acelerando maniobras por Alta Presión";
+                        }
+                        
+                        document.getElementById('action-interpretation').innerText = interp;
+                    }
+
+                    // Update Embeddings
+                    if (data.debug && data.debug.NET_A_emb) {
+                        const d = data.debug;
+                        document.getElementById('embed-container').innerHTML = `
+                            <div class="kv-pair"><span class="key">NET_A (Ball)</span><span class="value">[${d.NET_A_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                            <div class="kv-pair"><span class="key">NET_B (Self)</span><span class="value">[${d.NET_B_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                            <div class="kv-pair"><span class="key">NET_C (Threats)</span><span class="value">[${d.NET_C_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                            <div class="kv-pair"><span class="key">NET_T (Goal)</span><span class="value">[${d.NET_T_emb.map(x=>x.toFixed(2)).join(', ')}]</span></div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('status').innerText = 'Desconectado';
+                    document.getElementById('status').style.color = '#ef4444';
+                });
+        }
+
+        // Poll at 10 Hz
+        setInterval(updateUI, 100);
+    </script>
+</body>
+</html>

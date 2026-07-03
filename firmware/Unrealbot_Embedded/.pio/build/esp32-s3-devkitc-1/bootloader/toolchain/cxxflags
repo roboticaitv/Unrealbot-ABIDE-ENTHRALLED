@@ -1,0 +1,6 @@
+"-specs=/home/pi/Desktop/Unrealbot-ABIDE-ENTHRALLED/firmware/Unrealbot_Embedded/.pio/build/esp32-s3-devkitc-1/bootloader/specs/picolibc.specs"
+-mlongcalls
+-fno-builtin-memcpy
+-fno-builtin-memset
+-fno-builtin-bzero
+-fno-rtti
